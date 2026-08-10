@@ -5,6 +5,36 @@ import { consumeRateLimit, isUuid, requestBodyTooLarge } from "@/lib/security";
 
 const contentKeys = new Set(["matches", "name", "conclusion", "materiality", "sourceBalance", "comparisonBalance", "beginningBalance", "periodActivity", "rules", "dimensions"]);
 
+function describeChanges(body: Record<string, any>, current: Record<string, any>) {
+  const changes: { label: string; from?: string | number; to?: string | number }[] = [];
+  const fields = [
+    ["name", "Reconciliation name", "name"], ["conclusion", "Conclusion", "conclusion"],
+    ["materiality", "Materiality", "materiality"], ["sourceBalance", "Source balance", "source_balance"],
+    ["comparisonBalance", "Comparison balance", "comparison_balance"], ["beginningBalance", "Beginning balance", "beginning_balance"],
+    ["periodActivity", "Period activity", "period_activity"], ["closePeriodId", "Connected close", "close_period_id"],
+    ["profileId", "Recurring account", "profile_id"],
+  ] as const;
+  for (const [client, label, database] of fields) {
+    if (body[client] === undefined || String(body[client] ?? "") === String(current[database] ?? "")) continue;
+    const clean = (value: unknown) => typeof value === "string" ? value.slice(0, 180) : Number.isFinite(Number(value)) && value !== null && value !== "" ? Number(value) : String(value ?? "None");
+    changes.push({ label, from: clean(current[database]), to: clean(body[client]) });
+  }
+  if (body.rules !== undefined) changes.push({ label: "Matching rules updated" });
+  if (body.dimensions !== undefined) changes.push({ label: "Accounting dimensions updated" });
+  if (Array.isArray(body.matches)) {
+    const before = new Map((current.matches || []).map((item: Record<string, any>) => [item.id, item]));
+    const changed = body.matches.filter((item: Record<string, any>) => {
+      const old = before.get(item.id) as Record<string, any> | undefined;
+      return old && ["status", "decision", "exceptionType", "explanation", "owner", "dueDate", "proposedAdjustment"].some((key) => String(item[key] ?? "") !== String(old[key] ?? ""));
+    });
+    const resolved = changed.filter((item: Record<string, any>) => item.decision === "approved").length;
+    const reopened = changed.filter((item: Record<string, any>) => item.decision === "pending").length;
+    if (changed.length) changes.push({ label: `${changed.length} result${changed.length === 1 ? "" : "s"} updated${resolved ? ` · ${resolved} resolved` : ""}${reopened ? ` · ${reopened} reopened` : ""}` });
+  }
+  const summary = changes.length === 1 ? changes[0].label : changes.length ? `${changes.length} reconciliation changes saved` : "Reconciliation details updated";
+  return { summary, changes };
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   if (requestBodyTooLarge(request, 8 * 1024 * 1024)) return NextResponse.json({ error: "The update is too large." }, { status: 413 });
   const supabase = await createClient();
@@ -42,7 +72,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const actorName = userDisplayName(user);
   let action = "updated";
-  let summary = "Reconciliation details updated";
+  const described = describeChanges(body, current);
+  let summary = described.summary;
 
   if (requestedStatus === "review") {
     if (!String(body.conclusion ?? current.conclusion ?? "").trim()) return NextResponse.json({ error: "Add a conclusion before submitting for review." }, { status: 400 });
@@ -98,7 +129,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { data, error } = await supabase.from("reconciliations").update(update).eq("id", id).eq("organization_id", membership.organization_id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   try {
-    await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName, entityType: "reconciliation", entityId: id, action, summary, details: { previousStatus: current.status, status: data.status, changedFields: Object.keys(body).filter((key) => key !== "matches") } });
+    await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName, entityType: "reconciliation", entityId: id, action, summary, details: { previousStatus: current.status, status: data.status, changedFields: Object.keys(body).filter((key) => key !== "matches"), changes: described.changes } });
   } catch (auditError) {
     return NextResponse.json({ error: auditError instanceof Error ? auditError.message : "Audit history could not be recorded." }, { status: 500 });
   }

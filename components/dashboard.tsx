@@ -2979,10 +2979,17 @@ function CertificationPanel({
 
 function AuditTimeline({ events, context = "reconciliation" }: { events: AuditEvent[]; context?: "reconciliation" | "close" }) {
   return (
-    <section className="panel audit-timeline">
-      <div className="panel-title"><div><h2>Audit history</h2><InfoTip text="A permanent, append-only record of preparation, review, certification, reopening, and important changes." /><p>Who did what, and when. These entries cannot be edited or deleted.</p></div></div>
-      {events.length ? <div className="audit-event-list">{events.slice(0, 20).map((event) => <article key={event.id}><span className="audit-dot" /><div><strong>{event.summary}</strong><small>{event.actorName} · {new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div> : <div className="empty-small">Activity will appear as this {context} moves through the workflow.</div>}
-    </section>
+    <details className="panel audit-timeline">
+      <summary><span><ClockCounterClockwise weight="duotone" /><span><strong>Audit history</strong><small>Permanent record of important {context} activity</small></span></span><b>{events.length} event{events.length === 1 ? "" : "s"}</b><span className="audit-view-label">View history <CaretDown /></span></summary>
+      <div className="audit-timeline-body">
+        <p>Who did what, and when. These entries cannot be edited or deleted. <InfoTip text="Taliqor records preparation, review, certification, reopening, evidence, and material accounting changes without tracking routine page activity." /></p>
+        {events.length ? <div className="audit-event-list">{events.slice(0, 20).map((event) => {
+          const changes = Array.isArray(event.details.changes) ? event.details.changes as { label: string; from?: string | number; to?: string | number }[] : [];
+          const legacyFields = Array.isArray(event.details.changedFields) ? event.details.changedFields as string[] : [];
+          return <article key={event.id}><span className="audit-dot" /><div><strong>{event.summary}</strong><small>{event.actorName} · {new Date(event.createdAt).toLocaleString()}</small>{(changes.length > 0 || legacyFields.length > 0) && <details className="audit-event-details"><summary>View details</summary><ul>{changes.map((change, index) => <li key={`${change.label}-${index}`}><b>{change.label}</b>{change.from !== undefined || change.to !== undefined ? <span>{String(change.from ?? "None")} → {String(change.to ?? "None")}</span> : null}</li>)}{!changes.length && legacyFields.map((field) => <li key={field}><b>{field.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase())}</b></li>)}</ul></details>}</div></article>;
+        })}</div> : <div className="empty-small">Activity will appear as this {context} moves through the workflow.</div>}
+      </div>
+    </details>
   );
 }
 

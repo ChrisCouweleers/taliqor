@@ -6673,14 +6673,32 @@ button:disabled {
 .certification-lock span,.change-request-note span { display: grid; gap: 2px; }
 .certification-lock small,.change-request-note small { color: inherit; opacity: .82; }
 .review-control-note { margin: 10px 0 0; color: #71809a; }
-.audit-timeline { margin-bottom: 18px; }
+.audit-timeline { margin-bottom: 18px; padding: 0; overflow: hidden; }
+.audit-timeline > summary { list-style: none; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 18px; padding: 17px 20px; cursor: pointer; }
+.audit-timeline > summary::-webkit-details-marker { display: none; }
+.audit-timeline > summary > span:first-child { display: flex; align-items: center; gap: 12px; }
+.audit-timeline > summary > span:first-child > svg { width: 24px; height: 24px; color: #0ead98; }
+.audit-timeline > summary > span:first-child > span { display: grid; gap: 2px; }
+.audit-timeline > summary strong { color: #082043; font-size: 15px; }
+.audit-timeline > summary small { color: #71809a; }
+.audit-timeline > summary > b { border-radius: 999px; background: #eef5f8; color: #52667c; padding: 5px 9px; font-size: 12px; }
+.audit-view-label { display: flex; align-items: center; gap: 5px; color: #082043; font-weight: 750; }
+.audit-view-label svg { transition: transform .18s ease; }
+.audit-timeline[open] .audit-view-label svg { transform: rotate(180deg); }
+.audit-timeline-body { border-top: 1px solid #e8eef4; padding: 6px 20px 16px; }
+.audit-timeline-body > p { display: flex; align-items: center; gap: 6px; color: #71809a; margin: 10px 0 4px; }
 .audit-event-list { display: grid; }
 .audit-event-list article { display: flex; gap: 12px; position: relative; padding: 10px 0; border-bottom: 1px solid #edf1f6; }
 .audit-event-list article:last-child { border-bottom: 0; }
 .audit-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #12b8a0; box-shadow: 0 0 0 4px #e5faf6; }
 .audit-event-list article > div { display: grid; gap: 3px; }
 .audit-event-list small { color: #71809a; }
-.close-approval-panel { display: grid; grid-template-columns: minmax(260px,1fr) minmax(360px,1.25fr); gap: 22px; align-items: end; margin-bottom: 18px; }
+.audit-event-details { margin-top: 5px; }
+.audit-event-details > summary { cursor: pointer; color: #087c6b; font-weight: 700; }
+.audit-event-details ul { display: grid; gap: 6px; margin: 8px 0 2px; padding: 10px 12px; border-radius: 8px; background: #f5f8fb; list-style: none; }
+.audit-event-details li { display: flex; justify-content: space-between; gap: 18px; color: #617289; }
+.audit-event-details li b { color: #263950; }
+.close-approval-panel { display: grid; grid-template-columns: minmax(260px,1fr) minmax(360px,1.25fr); gap: 22px; align-items: start; margin-bottom: 18px; }
 .close-approval-panel h2 { display: inline; }
 .close-approval-panel > div > p { margin-top: 7px; color: #71809a; }
 .close-approval-panel label { display: grid; gap: 7px; font-weight: 700; }
@@ -6731,6 +6749,11 @@ button:disabled {
 [data-theme="dark"] .change-request-note { background: #41251f; color: #ffad9e; }
 [data-theme="dark"] .audit-event-list article { border-color: #263d5a; }
 [data-theme="dark"] .audit-dot { box-shadow: 0 0 0 4px #16443e; }
+[data-theme="dark"] .audit-timeline > summary strong,[data-theme="dark"] .audit-view-label { color: #edf7ff; }
+[data-theme="dark"] .audit-timeline > summary > b { background: #203650; color: #b9c9da; }
+[data-theme="dark"] .audit-timeline-body { border-color: #293f5b; }
+[data-theme="dark"] .audit-event-details ul { background: #162b46; }
+[data-theme="dark"] .audit-event-details li,[data-theme="dark"] .audit-event-details li b { color: #c0cfdf; }
 [data-theme="dark"] .prior-explanation,[data-theme="dark"] .required-support { background: #162b46; color: #b7c7da; }
 [data-theme="dark"] .close-approval-panel textarea { background: linear-gradient(180deg,#172b45,#14263e); color: #edf7ff; border-color: #38516d; box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
 [data-theme="dark"] .close-approval-panel textarea:hover { border-color: #52708f; }
