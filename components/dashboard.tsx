@@ -53,7 +53,13 @@ import { createClient } from "@/lib/supabase/client";
 
 type UserInfo = { name: string; email: string; organizationName: string };
 type UploadState = { file: File; preview: CsvPreview; mapping: ColumnMapping };
-type View = "overview" | "history" | "exceptions" | "close" | "settings";
+type View =
+  | "overview"
+  | "reconciliation"
+  | "history"
+  | "exceptions"
+  | "close"
+  | "settings";
 const blankMapping: ColumnMapping = {
   id: "",
   date: "",
@@ -326,7 +332,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
       setRuns((current) => [data.run, ...current]);
       setSelectedId(data.run.id);
       setWizardStep(3);
-      setView("overview");
+      setView("reconciliation");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Reconciliation failed.",
@@ -351,8 +357,16 @@ export function Dashboard({ user }: { user: UserInfo }) {
     setError("");
     setNotice("");
   }
-  async function decide(matchId: string, decision: "approved" | "rejected") {
+  async function decide(
+    matchId: string,
+    decision: "pending" | "approved" | "rejected",
+  ) {
     if (!selected) return;
+    const workflowStatus =
+      decision !== "approved" &&
+      (selected.status === "review" || selected.status === "certified")
+        ? "changes_requested"
+        : selected.status;
     const matches = selected.matches.map((item) =>
       item.id === matchId
         ? {
@@ -361,19 +375,25 @@ export function Dashboard({ user }: { user: UserInfo }) {
             status:
               decision === "approved"
                 ? ("matched" as const)
-                : ("unmatched" as const),
+                : item.right
+                  ? ("review" as const)
+                  : ("unmatched" as const),
+            resolvedAt:
+              decision === "approved" ? new Date().toISOString() : undefined,
           }
         : item,
     );
     setRuns((current) =>
       current.map((run) =>
-        run.id === selected.id ? { ...run, matches } : run,
+        run.id === selected.id
+          ? { ...run, matches, status: workflowStatus }
+          : run,
       ),
     );
     const response = await fetch(`/api/reconciliations/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matches }),
+      body: JSON.stringify({ matches, status: workflowStatus }),
     });
     if (!response.ok) {
       setError("That decision could not be saved.");
@@ -510,7 +530,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
           </Nav>
         </nav>
         <div className="side-bottom">
-          <button className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
             {theme === "light" ? <Moon weight="fill" /> : <Sun weight="fill" />}
             {theme === "light" ? "Dark mode" : "Light mode"}
           </button>
@@ -537,22 +561,26 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 ? "Exception review"
                 : view === "history"
                   ? "Reconciliation history"
-                  : view === "close"
-                    ? "Financial close"
-                    : view === "settings"
-                      ? "Workspace settings"
-                      : `Good ${greeting()}, ${user.name.split(" ")[0]}`}
+                  : view === "reconciliation"
+                    ? selected?.name || "Reconciliation"
+                    : view === "close"
+                      ? "Financial close"
+                      : view === "settings"
+                        ? "Workspace settings"
+                        : `Good ${greeting()}, ${user.name.split(" ")[0]}`}
             </h1>
             <p>
               {view === "overview"
-                ? "Here’s the health of your latest reconciliation."
-                : view === "exceptions"
-                  ? "Explain, assign, and resolve every difference."
-                  : view === "history"
-                    ? "Every run, decision, and result in one place."
-                    : view === "close"
-                      ? "Run a controlled month-end, quarter-end, or year-end close."
-                      : "Your free Taliqor workspace."}
+                ? "A high-level view of reconciliation health, close readiness, and open work."
+                : view === "reconciliation"
+                  ? "Review balances, evidence, exceptions, and certification for this reconciliation."
+                  : view === "exceptions"
+                    ? "Explain, assign, and resolve every difference."
+                    : view === "history"
+                      ? "Every run, decision, and result in one place."
+                      : view === "close"
+                        ? "Run a controlled month-end, quarter-end, or year-end close."
+                        : "Your free Taliqor workspace."}
             </p>
           </div>
           <div className="header-actions">
@@ -599,8 +627,19 @@ export function Dashboard({ user }: { user: UserInfo }) {
             runs={runs}
             select={(id) => {
               setSelectedId(id);
-              setView("overview");
+              setView("reconciliation");
             }}
+          />
+        ) : view === "overview" ? (
+          <WorkspaceOverview
+            runs={runs}
+            periods={closePeriods}
+            openReconciliation={(id) => {
+              setSelectedId(id);
+              setView("reconciliation");
+            }}
+            openClose={() => setView("close")}
+            start={() => setWizard(true)}
           />
         ) : !selected ? (
           <Empty onStart={() => setWizard(true)} />
@@ -609,7 +648,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
             <section className="run-toolbar">
               <div>
                 <span className="live-dot" />
-                {selected.status.toUpperCase()} <strong>{selected.name}</strong>
+                {reconciliationStatusLabel(selected.status).toUpperCase()}{" "}
+                <strong>{selected.name}</strong>
                 <small>
                   {selected.periodEnd ||
                     new Date(selected.createdAt).toLocaleDateString()}{" "}
@@ -832,13 +872,175 @@ function Empty({ onStart }: { onStart: () => void }) {
     </section>
   );
 }
+
+function WorkspaceOverview({
+  runs,
+  periods,
+  openReconciliation,
+  openClose,
+  start,
+}: {
+  runs: ReconciliationRun[];
+  periods: ClosePeriod[];
+  openReconciliation: (id: string) => void;
+  openClose: () => void;
+  start: () => void;
+}) {
+  if (!runs.length && !periods.length) return <Empty onStart={start} />;
+  const allResults = runs.flatMap((run) => run.matches);
+  const resolved = allResults.filter(
+    (item) => item.status === "matched" || item.decision === "approved",
+  ).length;
+  const open = allResults.length - resolved;
+  const certified = runs.filter((run) => run.status === "certified").length;
+  const readyForReview = runs.filter((run) => run.status === "review").length;
+  const activeClose =
+    periods.find((period) => period.status === "open") || periods[0];
+  const closeDone =
+    activeClose?.tasks.filter((task) => task.status === "done").length || 0;
+  const closeTotal = activeClose?.tasks.length || 0;
+  const closePercent = closeTotal
+    ? Math.round((closeDone / closeTotal) * 100)
+    : 0;
+  const reconciliationRate = allResults.length
+    ? Math.round((resolved / allResults.length) * 1000) / 10
+    : 0;
+  return (
+    <>
+      <section className="overview-welcome">
+        <div>
+          <span>WORKSPACE HEALTH</span>
+          <h2>
+            {open
+              ? `${open} item${open === 1 ? "" : "s"} need attention`
+              : "Everything is reconciled"}
+          </h2>
+          <p>Monitor every reconciliation and close period from one place.</p>
+        </div>
+        <button className="primary" onClick={start}>
+          <UploadSimple />
+          New reconciliation
+        </button>
+      </section>
+      <section className="metrics overview-metrics">
+        <Metric
+          label="Overall reconciliation rate"
+          value={`${reconciliationRate}%`}
+          trend={`${resolved} of ${allResults.length} results resolved`}
+        />
+        <Metric
+          label="Open exceptions"
+          value={String(open)}
+          trend="across all reconciliations"
+          warn={open > 0}
+        />
+        <Metric
+          label="Ready for review"
+          value={String(readyForReview)}
+          trend={`${certified} certified · ${runs.length} total`}
+        />
+        <Metric
+          label="Current close"
+          value={activeClose ? `${closePercent}%` : "—"}
+          trend={activeClose?.name || "No close period started"}
+        />
+      </section>
+      <section className="overview-grid">
+        <div className="panel overview-list">
+          <div className="panel-title">
+            <div>
+              <h2>Recent reconciliations</h2>
+              <p>Health and exceptions across your latest work.</p>
+            </div>
+          </div>
+          {runs.slice(0, 5).map((run) => {
+            const runResolved = run.matches.filter(
+              (item) =>
+                item.status === "matched" || item.decision === "approved",
+            ).length;
+            const runRate = run.matches.length
+              ? Math.round((runResolved / run.matches.length) * 100)
+              : 0;
+            return (
+              <button key={run.id} onClick={() => openReconciliation(run.id)}>
+                <span className={`overview-status ${run.status}`}>
+                  <Rows />
+                </span>
+                <div>
+                  <strong>{run.name}</strong>
+                  <small>
+                    {run.leftName} vs {run.rightName} ·{" "}
+                    {run.matches.length - runResolved} open
+                  </small>
+                </div>
+                <div>
+                  <strong>{runRate}%</strong>
+                  <small>{reconciliationStatusLabel(run.status)}</small>
+                </div>
+                <ArrowRight />
+              </button>
+            );
+          })}
+        </div>
+        <div className="panel close-snapshot">
+          <div className="panel-title">
+            <div>
+              <h2>Close readiness</h2>
+              <p>{activeClose?.name || "Start your first close period."}</p>
+            </div>
+          </div>
+          {activeClose ? (
+            <>
+              <div
+                className="snapshot-ring"
+                style={
+                  {
+                    "--progress": `${closePercent * 3.6}deg`,
+                  } as React.CSSProperties
+                }
+              >
+                <strong>{closePercent}%</strong>
+                <span>complete</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Tasks complete</dt>
+                  <dd>
+                    {closeDone}/{closeTotal}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Variance reviews</dt>
+                  <dd>
+                    {
+                      activeClose.variances.filter(
+                        (item) => item.status === "reviewed",
+                      ).length
+                    }
+                    /{activeClose.variances.length}
+                  </dd>
+                </div>
+              </dl>
+            </>
+          ) : (
+            <div className="empty-small">No active close workspace.</div>
+          )}
+          <button onClick={openClose}>
+            {activeClose ? "Open Close Hub" : "Start a close"}
+            <ArrowRight />
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
 function Results({
   rows,
   decide,
   update,
 }: {
   rows: Match[];
-  decide: (id: string, decision: "approved" | "rejected") => void;
+  decide: (id: string, decision: "pending" | "approved" | "rejected") => void;
   update: (id: string, patch: Partial<Match>) => void;
 }) {
   return (
@@ -968,10 +1170,18 @@ function Results({
                 )}
               </td>
               <td>
-                {item.status !== "matched" && item.decision === "pending" ? (
+                {item.status === "matched" || item.decision === "approved" ? (
+                  <button
+                    className="resolution-action reopen"
+                    title="Reopen this result"
+                    onClick={() => decide(item.id, "pending")}
+                  >
+                    Unresolve
+                  </button>
+                ) : (
                   <div className="row-actions">
                     <button
-                      title="Approve"
+                      title="Resolve"
                       onClick={() => decide(item.id, "approved")}
                     >
                       <Check />
@@ -983,10 +1193,6 @@ function Results({
                       <X />
                     </button>
                   </div>
-                ) : (
-                  <span className="muted">
-                    {item.decision === "approved" ? "Resolved" : "—"}
-                  </span>
                 )}
               </td>
             </tr>
@@ -1259,6 +1465,7 @@ function CertificationPanel({
         reviewedAt: new Date().toISOString(),
       },
     });
+  const statusLabel = reconciliationStatusLabel(run.status);
   return (
     <section className="panel certification">
       <div>
@@ -1266,8 +1473,8 @@ function CertificationPanel({
         <span>
           <h2>Reconciliation certification</h2>
           <p>
-            Document the conclusion and preserve who prepared and reviewed this
-            period.
+            Submit completed work for review, then certify the reviewer-approved
+            conclusion and audit trail.
           </p>
         </span>
       </div>
@@ -1279,31 +1486,62 @@ function CertificationPanel({
       />
       <footer>
         <span>
+          <b className={`workflow-status ${run.status}`}>{statusLabel}</b>
           {run.certification.preparedBy
-            ? `Prepared by ${run.certification.preparedBy}`
-            : "Not prepared"}
+            ? ` · Prepared by ${run.certification.preparedBy}`
+            : " · Not prepared"}
           {run.certification.reviewedBy
             ? ` · Reviewed by ${run.certification.reviewedBy}`
             : ""}
         </span>
         <div>
+          {run.status === "review" ? (
+            <button onClick={() => update({ status: "changes_requested" })}>
+              Request changes
+            </button>
+          ) : run.status === "certified" ? (
+            <button
+              onClick={() =>
+                update({
+                  status: "changes_requested",
+                  certification: {
+                    ...run.certification,
+                    reviewedBy: undefined,
+                    reviewedAt: undefined,
+                  },
+                })
+              }
+            >
+              Reopen certification
+            </button>
+          ) : (
+            <button
+              onClick={() =>
+                update({
+                  status: "review",
+                  conclusion,
+                  certification: {
+                    ...run.certification,
+                    preparedBy: user.name,
+                    preparedAt: new Date().toISOString(),
+                  },
+                })
+              }
+            >
+              Submit for review
+            </button>
+          )}
           <button
-            onClick={() =>
-              update({
-                status: "review",
-                conclusion,
-                certification: {
-                  ...run.certification,
-                  preparedBy: user.name,
-                  preparedAt: new Date().toISOString(),
-                },
-              })
+            className="primary"
+            disabled={run.status !== "review"}
+            title={
+              run.status === "review"
+                ? "Approve and certify this reconciliation"
+                : "Submit this reconciliation for review before certifying"
             }
+            onClick={certify}
           >
-            Ready for review
-          </button>
-          <button className="primary" onClick={certify}>
-            Certify
+            {run.status === "certified" ? "Certified" : "Approve & certify"}
           </button>
         </div>
       </footer>
@@ -1432,6 +1670,18 @@ function CloseHub({
         : item,
     );
     save({ tasks });
+  }
+  function setAllTasks(status: "todo" | "done") {
+    if (!selected) return;
+    const completedAt =
+      status === "done" ? new Date().toISOString() : undefined;
+    save({
+      tasks: selected.tasks.map((task) => ({
+        ...task,
+        status,
+        completedAt,
+      })),
+    });
   }
   async function importVariance(file?: File) {
     if (!file || !selected) return;
@@ -1595,6 +1845,17 @@ function CloseHub({
                 Ownership, deadlines, dependencies, and evidence in one place.
               </p>
             </div>
+            <div className="checklist-actions">
+              <button
+                disabled={done === selected.tasks.length}
+                onClick={() => setAllTasks("done")}
+              >
+                Check all
+              </button>
+              <button disabled={done === 0} onClick={() => setAllTasks("todo")}>
+                Uncheck all
+              </button>
+            </div>
           </div>
           <div className="task-list">
             {selected.tasks.map((task) => (
@@ -1642,15 +1903,28 @@ function CloseHub({
               <h2>Variance review</h2>
               <p>Upload account, current, and prior balances.</p>
             </div>
-            <label className="upload-mini">
-              Import CSV
-              <input
-                hidden
-                type="file"
-                accept=".csv"
-                onChange={(e) => importVariance(e.target.files?.[0])}
-              />
-            </label>
+            <div className="variance-actions">
+              <label className="upload-mini">
+                {selected.variances.length ? "Replace CSV" : "Import CSV"}
+                <input
+                  hidden
+                  type="file"
+                  accept=".csv"
+                  onChange={async (e) => {
+                    await importVariance(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {selected.variances.length > 0 && (
+                <button
+                  className="clear-variance"
+                  onClick={() => save({ variances: [] })}
+                >
+                  Clear import
+                </button>
+              )}
+            </div>
           </div>
           {selected.variances.length ? (
             selected.variances.map((variance) => (
@@ -1926,6 +2200,15 @@ function initials(name: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function reconciliationStatusLabel(status: ReconciliationRun["status"]) {
+  return {
+    draft: "In progress",
+    review: "Ready for review",
+    changes_requested: "Changes requested",
+    certified: "Certified",
+  }[status];
 }
 function greeting() {
   const hour = new Date().getHours();

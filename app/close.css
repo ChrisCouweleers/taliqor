@@ -87,6 +87,27 @@
   display: flex;
   gap: 8px;
 }
+.workflow-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #536174;
+  font-size: 12px;
+}
+.workflow-status.review {
+  background: #fff2d8;
+  color: #8b5b09;
+}
+.workflow-status.certified {
+  background: #ddf7f0;
+  color: #087866;
+}
+.workflow-status.changes_requested {
+  background: #ffe8e4;
+  color: #b63c2d;
+}
 .certification button,
 .close-head button,
 .close-create button {
@@ -97,6 +118,10 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+.certification button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 .resolution-fields {
   display: grid;
@@ -217,6 +242,7 @@
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   gap: 18px;
+  margin-top: 18px;
 }
 .close-grid > .panel {
   padding: 20px;
@@ -231,6 +257,18 @@
   gap: 10px;
   padding: 11px 2px;
   border-bottom: 1px solid #edf0f2;
+  border-radius: 7px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+.task-list > label:hover {
+  background: #f7fbfa;
+  border-color: #cfe8e2;
+  box-shadow: 0 5px 14px rgb(16 71 64 / 7%);
+  transform: translateY(-1px);
 }
 .task-list > label.done {
   opacity: 0.55;
@@ -267,6 +305,48 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+.checklist-actions {
+  display: flex;
+  gap: 7px;
+}
+.checklist-actions button,
+.clear-variance {
+  border: 1px solid #d8e0e6;
+  background: #fff;
+  color: #24344b;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+.checklist-actions button:hover,
+.clear-variance:hover {
+  background: #eef8f6;
+  border-color: #9ed6cc;
+  transform: translateY(-1px);
+}
+.checklist-actions button:active,
+.clear-variance:active {
+  transform: translateY(0) scale(0.98);
+}
+.checklist-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+.variance-panel .panel-title {
+  gap: 8px;
+}
+.variance-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 .variance-row {
   display: grid;
@@ -356,10 +436,42 @@
 [data-theme="dark"] .variance-row small {
   color: #aab8ca;
 }
+[data-theme="dark"] .workflow-status {
+  background: #26394e;
+  color: #d7e1ee;
+}
+[data-theme="dark"] .workflow-status.review {
+  background: #49391b;
+  color: #ffd98b;
+}
+[data-theme="dark"] .workflow-status.certified {
+  background: #153f38;
+  color: #7ce2d2;
+}
+[data-theme="dark"] .workflow-status.changes_requested {
+  background: #4b2928;
+  color: #ffaaa0;
+}
 [data-theme="dark"] .control-summary dl div,
 [data-theme="dark"] .task-list > label,
 [data-theme="dark"] .variance-row {
   border-color: #2b4159;
+}
+[data-theme="dark"] .task-list > label:hover {
+  background: #14273c;
+  border-color: #3d665f;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 18%);
+}
+[data-theme="dark"] .checklist-actions button,
+[data-theme="dark"] .clear-variance {
+  background: #1a2b42;
+  color: #eaf0f8;
+  border-color: #3b536d;
+}
+[data-theme="dark"] .checklist-actions button:hover,
+[data-theme="dark"] .clear-variance:hover {
+  background: #214039;
+  border-color: #4e8a7f;
 }
 [data-theme="dark"] .certification button,
 [data-theme="dark"] .close-head button,
