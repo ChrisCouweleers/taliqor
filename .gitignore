@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+
+# Next.js output
+/.next
+/out
+
+# local handoff and generated caches
+/.tmp-*
+*.tsbuildinfo
+
+# environment files
+.env*
+!.env.example
+
+# logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+
+# local design reference
+/ChatGPT Image Aug 6, 2026, 10_51_34 PM.png
+
+# Supabase CLI local link cache
+/supabase/.temp/
+
+.vercel
