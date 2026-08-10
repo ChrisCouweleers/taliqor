@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./close.css";
 
 export const metadata: Metadata = {
   title: "Taliqor — Revenue, reconciled.",

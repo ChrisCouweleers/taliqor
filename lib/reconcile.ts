@@ -1,4 +1,4 @@
-import { Match, Transaction } from "./domain";
+import type { Match, ReconciliationRules, Transaction } from "./domain";
 
 function daysBetween(a: string, b: string) {
   const first = Date.parse(a), second = Date.parse(b);
@@ -12,7 +12,8 @@ function similarity(a: string, b: string) {
   return (2 * overlap) / (first.size + second.size);
 }
 
-export function reconcile(left: Transaction[], right: Transaction[]): Match[] {
+export function reconcile(left: Transaction[], right: Transaction[], rules: Partial<ReconciliationRules> = {}): Match[] {
+  const dateTolerance = rules.dateTolerance ?? 3, amountTolerance = rules.amountTolerance ?? 1, autoApprove = rules.autoApprove ?? 90;
   const available = new Set(right.map((_, index) => index));
   const matches: Match[] = left.map((transaction, row) => {
     let bestIndex = -1, bestScore = -100;
@@ -23,7 +24,7 @@ export function reconcile(left: Transaction[], right: Transaction[]): Match[] {
       const evidence: string[] = [];
       const exactId = Boolean(transaction.id && candidate.id && normalized(transaction.id) === normalized(candidate.id));
       const amountDelta = Math.abs(transaction.amount - candidate.amount);
-      const tolerance = Math.max(Math.abs(transaction.amount) * .01, 1);
+      const tolerance = Math.max(Math.abs(transaction.amount) * (amountTolerance / 100), .01);
       const dayDelta = daysBetween(transaction.date, candidate.date);
       const textSimilarity = similarity(transaction.description, candidate.description);
       if (transaction.currency !== candidate.currency) { score -= 100; evidence.push("Currency differs"); }
@@ -31,14 +32,26 @@ export function reconcile(left: Transaction[], right: Transaction[]): Match[] {
       if (amountDelta < .005) { score += 30; evidence.push("Amount exact"); }
       else if (amountDelta <= tolerance) { score += 14; evidence.push(`Amount within ${((amountDelta / Math.max(Math.abs(transaction.amount), 1)) * 100).toFixed(1)}%`); }
       if (dayDelta === 0) { score += 10; evidence.push("Date exact"); }
-      else if (dayDelta <= 3) { score += 6; evidence.push(`Dates ${dayDelta} day${dayDelta === 1 ? "" : "s"} apart`); }
+      else if (dayDelta <= dateTolerance) { score += 6; evidence.push(`Dates ${dayDelta} day${dayDelta === 1 ? "" : "s"} apart`); }
       if (textSimilarity > .72) { score += 8; evidence.push("Description similar"); }
       if (score > bestScore) { bestScore = score; bestIndex = index; bestEvidence = evidence; }
     });
     if (bestIndex >= 0 && bestScore >= 30) {
       available.delete(bestIndex);
       const confidence = Math.max(1, Math.min(100, Math.round(bestScore)));
-      return { id: `m-${row}-${bestIndex}`, left: transaction, right: right[bestIndex], status: confidence >= 90 ? "matched" : "review", decision: confidence >= 90 ? "approved" : "pending", confidence, reason: bestEvidence.join(" · "), evidence: bestEvidence };
+      return { id: `m-${row}-${bestIndex}`, left: transaction, right: right[bestIndex], status: confidence >= autoApprove ? "matched" : "review", decision: confidence >= autoApprove ? "approved" : "pending", confidence, reason: bestEvidence.join(" · "), evidence: bestEvidence };
+    }
+    if (rules.allowGrouping !== false) {
+      const candidates = [...available].filter((index) => daysBetween(transaction.date, right[index].date) <= dateTolerance);
+      for (let first = 0; first < candidates.length; first++) for (let second = first + 1; second < candidates.length; second++) {
+        const indexes = [candidates[first], candidates[second]];
+        const sum = indexes.reduce((total, index) => total + right[index].amount, 0);
+        if (Math.abs(sum - transaction.amount) <= Math.max(Math.abs(transaction.amount) * (amountTolerance / 100), .01)) {
+          indexes.forEach((index) => available.delete(index));
+          const grouped = indexes.map((index) => right[index]);
+          return { id:`group-${row}-${indexes.join("-")}`, left:transaction, right:grouped[0], groupedRight:grouped, status:"review", decision:"pending", confidence:88, reason:`${grouped.length} transactions total ${transaction.amount.toFixed(2)}`, evidence:["Many-to-one amount match", `Dates within ${dateTolerance} days`] };
+        }
+      }
     }
     return { id: `m-${row}-none`, left: transaction, status: "unmatched", decision: "pending", confidence: 0, reason: "No corresponding transaction found", evidence: ["No candidate passed the matching threshold"] };
   });
