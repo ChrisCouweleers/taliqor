@@ -3,7 +3,16 @@ export type CanonicalField =
   | "date"
   | "description"
   | "amount"
-  | "currency";
+  | "currency"
+  | "account"
+  | "debit"
+  | "credit"
+  | "entity"
+  | "department"
+  | "location"
+  | "class"
+  | "subsidiary"
+  | "postingPeriod";
 
 export type ColumnMapping = Record<CanonicalField, string>;
 
@@ -13,6 +22,15 @@ export type Transaction = {
   description: string;
   amount: number;
   currency: string;
+  account?: string;
+  debit?: number;
+  credit?: number;
+  entity?: string;
+  department?: string;
+  location?: string;
+  class?: string;
+  subsidiary?: string;
+  postingPeriod?: string;
   source: string;
   raw: Record<string, string>;
 };
@@ -63,6 +81,19 @@ export type Certification = {
   preparedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  preparedById?: string;
+  reviewedById?: string;
+};
+
+export type AccountingDimensions = {
+  account?: string;
+  subsidiary?: string;
+  department?: string;
+  location?: string;
+  class?: string;
+  entity?: string;
+  currency?: string;
+  postingPeriod?: string;
 };
 
 export type MappingTemplate = {
@@ -99,6 +130,10 @@ export type ReconciliationRun = {
   certification: Certification;
   rules: ReconciliationRules;
   priorReconciliationId?: string;
+  lockedAt?: string;
+  certificationVersion: number;
+  changeReason?: string;
+  dimensions: AccountingDimensions;
 };
 
 export type JournalLine = {
@@ -152,6 +187,11 @@ export type ReconciliationProfile = {
   materiality: number;
   preparer: string;
   reviewer: string;
+  preparerId?: string;
+  reviewerId?: string;
+  dueOffset: number;
+  dimensions: AccountingDimensions;
+  requiredSupport: string[];
   active: boolean;
   createdAt: string;
 };
@@ -185,6 +225,13 @@ export type VarianceItem = {
   percent: number;
   explanation: string;
   status: "open" | "reviewed";
+  owner?: string;
+  reviewer?: string;
+  dueDate?: string;
+  percentageThreshold?: number;
+  priorExplanation?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
 };
 export type ClosePeriod = {
   id: string;
@@ -196,6 +243,21 @@ export type ClosePeriod = {
   tasks: CloseTask[];
   variances: VarianceItem[];
   closedAt?: string;
+  createdAt: string;
+  closeConclusion?: string;
+  reopenReason?: string;
+  closedBy?: string;
+  reopenedAt?: string;
+};
+
+export type AuditEvent = {
+  id: string;
+  actorName: string;
+  entityType: "reconciliation" | "close" | "adjustment" | "evidence" | "profile" | "variance";
+  entityId: string;
+  action: string;
+  summary: string;
+  details: Record<string, unknown>;
   createdAt: string;
 };
 

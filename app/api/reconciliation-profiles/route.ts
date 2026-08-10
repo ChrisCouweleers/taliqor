@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { appendAuditEvent, userDisplayName } from "@/lib/audit";
 
 const shape = (item: Record<string, any>) => ({
   id: item.id,
@@ -12,6 +13,11 @@ const shape = (item: Record<string, any>) => ({
   materiality: Number(item.materiality || 0),
   preparer: item.preparer,
   reviewer: item.reviewer,
+  preparerId: item.preparer_id,
+  reviewerId: item.reviewer_id,
+  dueOffset: Number(item.due_offset || 5),
+  dimensions: item.dimensions || {},
+  requiredSupport: item.required_support || [],
   active: item.active,
   createdAt: item.created_at,
 });
@@ -62,10 +68,15 @@ export async function POST(request: Request) {
       materiality: Number(body.materiality || 0),
       preparer: String(body.preparer || "").trim(),
       reviewer: String(body.reviewer || "").trim(),
+      preparer_id: body.preparerId || null,
+      reviewer_id: body.reviewerId || null,
+      due_offset: Math.max(-30, Math.min(90, Number(body.dueOffset ?? 5))),
+      dimensions: body.dimensions || {},
+      required_support: Array.isArray(body.requiredSupport) ? body.requiredSupport.slice(0, 20) : [],
     })
     .select()
     .single();
-  return error
-    ? NextResponse.json({ error: error.message }, { status: 400 })
-    : NextResponse.json({ profile: shape(data) });
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "profile", entityId: data.id, action: "created", summary: "Recurring reconciliation account added", details: { frequency: data.frequency, accountNumber: data.account_number } });
+  return NextResponse.json({ profile: shape(data) });
 }

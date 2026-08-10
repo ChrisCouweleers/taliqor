@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid, requestBodyTooLarge } from "@/lib/security";
 import { parseSpreadsheetBuffer } from "@/lib/spreadsheet";
+import { appendAuditEvent, userDisplayName } from "@/lib/audit";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -91,6 +92,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   const { data: signed } = await supabase.storage.from("supporting-evidence").createSignedUrl(path, 3600);
+  const auditEntityId = reconciliationId || adjustmentId;
+  if (reconciliationId) await supabase.from("reconciliations").update({ status: "changes_requested", locked_at: null, reviewed_by_id: null, change_reason: "Supporting evidence changed after submission." }).eq("id", reconciliationId).in("status", ["review", "certified"]);
+  if (auditEntityId) await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "evidence", entityId: auditEntityId, action: "evidence_attached", summary: `Supporting evidence attached: ${file.name}`, details: { evidenceId: data.id, matchId: matchId || null } });
   return NextResponse.json({ evidence: {
     id: data.id, reconciliationId: data.reconciliation_id, adjustmentId: data.adjustment_id,
     matchId: data.match_id, fileName: data.file_name, mimeType: data.mime_type,

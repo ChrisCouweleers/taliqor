@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeRateLimit, requestBodyTooLarge } from "@/lib/security";
+import { appendAuditEvent, userDisplayName } from "@/lib/audit";
 
 const fromDatabase = (item: Record<string, any>) => ({
   id: item.id,
@@ -28,6 +29,10 @@ const fromDatabase = (item: Record<string, any>) => ({
     item.period_activity == null ? undefined : Number(item.period_activity),
   conclusion: item.conclusion || "",
   certification: item.certification || {},
+  lockedAt: item.locked_at,
+  certificationVersion: Number(item.certification_version || 0),
+  changeReason: item.change_reason || "",
+  dimensions: item.dimensions || {},
   rules: item.rules || {},
   priorReconciliationId: item.prior_reconciliation_id,
   createdAt: item.created_at,
@@ -103,6 +108,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Check the reconciliation and file names." }, { status: 400 });
   if (!Array.isArray(body.matches) || body.matches.length > 100_000)
     return NextResponse.json({ error: "The reconciliation contains too many rows." }, { status: 400 });
+  let prior = null;
+  if (body.profileId) {
+    const { data: previous } = await supabase.from("reconciliations")
+      .select("id, source_balance, period_end")
+      .eq("organization_id", membership.organization_id)
+      .eq("profile_id", body.profileId)
+      .lt("period_end", body.periodEnd || "9999-12-31")
+      .order("period_end", { ascending: false }).limit(1).maybeSingle();
+    prior = previous;
+  }
+  const beginningBalance = body.beginningBalance ?? (prior?.source_balance == null ? null : Number(prior.source_balance));
+  const sourceBalance = body.sourceBalance == null ? null : Number(body.sourceBalance);
   const { data, error } = await supabase
     .from("reconciliations")
     .insert({
@@ -117,10 +134,13 @@ export async function POST(request: Request) {
       profile_id: body.profileId || null,
       method: body.method || "transaction",
       materiality: body.materiality || 0,
-      source_balance: body.sourceBalance,
+      source_balance: sourceBalance,
       comparison_balance: body.comparisonBalance,
+      beginning_balance: beginningBalance,
+      period_activity: body.periodActivity ?? (beginningBalance == null || sourceBalance == null ? null : sourceBalance - beginningBalance),
       rules: body.rules || {},
-      prior_reconciliation_id: body.priorReconciliationId || null,
+      prior_reconciliation_id: prior?.id || body.priorReconciliationId || null,
+      dimensions: body.dimensions || {},
     })
     .select()
     .single();
@@ -136,5 +156,6 @@ export async function POST(request: Request) {
       },
       { onConflict: "organization_id,fingerprint" },
     );
+  await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "reconciliation", entityId: data.id, action: "created", summary: prior ? "Recurring reconciliation created with prior-period continuity" : "Reconciliation created", details: { periodEnd: data.period_end, profileId: data.profile_id, priorReconciliationId: data.prior_reconciliation_id } });
   return NextResponse.json({ run: fromDatabase(data) });
 }

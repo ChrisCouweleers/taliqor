@@ -447,10 +447,6 @@ export function Homepage() {
         <div className="footer-brand">
           <Link href="/" aria-label="Taliqor home"><Logo /></Link>
           <p>Revenue reconciliation and financial close clarity for modern finance teams.</p>
-          <div className="footer-trust">
-            <span><LockKey weight="fill" /> Private storage</span>
-            <span><ShieldCheck weight="fill" /> Verified login</span>
-          </div>
         </div>
         <div className="footer-column">
           <strong>Product</strong>

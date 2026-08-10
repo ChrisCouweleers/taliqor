@@ -18,6 +18,7 @@ import {
   FileCsv,
   Gear,
   House,
+  LockKey,
   MagnifyingGlass,
   Moon,
   Printer,
@@ -47,6 +48,7 @@ import {
   ReconciliationProfile,
   ReconciliationRun,
   VarianceItem,
+  AuditEvent,
 } from "@/lib/domain";
 import {
   csvEscape,
@@ -91,12 +93,22 @@ const blankMapping: ColumnMapping = {
   description: "",
   amount: "",
   currency: "",
+  account: "",
+  debit: "",
+  credit: "",
+  entity: "",
+  department: "",
+  location: "",
+  class: "",
+  subsidiary: "",
+  postingPeriod: "",
 };
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
 });
+const displayMoney = (value: number) => Number.isFinite(value) ? money.format(value) : "—";
 
 export function Dashboard({ user }: { user: UserInfo }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -108,6 +120,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     [matchingRules, setMatchingRules] = useState<MatchingRule[]>([]),
     [adjustments, setAdjustments] = useState<JournalAdjustment[]>([]),
     [evidence, setEvidence] = useState<EvidenceFile[]>([]),
+    [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]),
     [reconciliationProfiles, setReconciliationProfiles] = useState<
       ReconciliationProfile[]
     >([]);
@@ -198,18 +211,20 @@ export function Dashboard({ user }: { user: UserInfo }) {
   }
   async function loadRuns() {
     try {
-      const [response, closeResponse, profileResponse, adjustmentResponse, evidenceResponse] = await Promise.all([
+      const [response, closeResponse, profileResponse, adjustmentResponse, evidenceResponse, auditResponse] = await Promise.all([
         fetch("/api/reconciliations"),
         fetch("/api/close-periods"),
         fetch("/api/reconciliation-profiles"),
         fetch("/api/adjustments"),
         fetch("/api/evidence"),
+        fetch("/api/audit-events"),
       ]);
       const data = await response.json(),
         closeData = await closeResponse.json(),
         profileData = await profileResponse.json(),
         adjustmentData = await adjustmentResponse.json(),
-        evidenceData = await evidenceResponse.json();
+        evidenceData = await evidenceResponse.json(),
+        auditData = await auditResponse.json();
       if (!response.ok) throw new Error(data.error);
       setRuns(data.runs);
       setTemplates(data.templates);
@@ -218,6 +233,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
       setReconciliationProfiles(profileData.profiles || []);
       setAdjustments(adjustmentData.adjustments || []);
       setEvidence(evidenceData.evidence || []);
+      setAuditEvents(auditData.events || []);
       setSelectedId((current) => current || data.runs[0]?.id || "");
     } catch (caught) {
       setError(
@@ -228,6 +244,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
     } finally {
       setLoading(false);
     }
+  }
+  async function refreshAudit() {
+    const response = await fetch("/api/audit-events");
+    const data = await response.json();
+    if (response.ok) setAuditEvents(data.events || []);
   }
   const selected = runs.find((run) => run.id === selectedId) || runs[0];
   const allMatches = selected?.matches || [];
@@ -343,14 +364,14 @@ export function Dashboard({ user }: { user: UserInfo }) {
   function beginMapping() {
     if (!left || !right)
       return setError("Choose two CSV or Excel files to continue.");
-    if (!left.mapping.amount || !right.mapping.amount)
-      setNotice("We need your help identifying the amount columns.");
+    if ((!left.mapping.amount && !left.mapping.debit && !left.mapping.credit) || (!right.mapping.amount && !right.mapping.debit && !right.mapping.credit))
+      setNotice("Map an amount column, or debit and credit columns, for each file.");
     setWizardStep(2);
     setError("");
   }
   async function createRun() {
-    if (!left || !right || !left.mapping.amount || !right.mapping.amount)
-      return setError("Choose an amount column for each source.");
+    if (!left || !right || (!left.mapping.amount && !left.mapping.debit && !left.mapping.credit) || (!right.mapping.amount && !right.mapping.debit && !right.mapping.credit))
+      return setError("Choose an amount column, or debit and credit columns, for each source.");
     setSaving(true);
     setError("");
     try {
@@ -507,7 +528,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     const response = await fetch(`/api/reconciliations/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matches, status: workflowStatus }),
+      body: JSON.stringify({ matches }),
     });
     if (!response.ok) {
       setError("That decision could not be saved.");
@@ -527,11 +548,13 @@ export function Dashboard({ user }: { user: UserInfo }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+    const data = await response.json();
     if (!response.ok) {
-      setError("That reconciliation update could not be saved.");
+      setError(data.error || "That reconciliation update could not be saved.");
       await loadRuns();
     } else {
       setError("");
+      await loadRuns();
     }
   }
   async function makeRunRecurring(run: ReconciliationRun) {
@@ -589,6 +612,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
         : [data.adjustment, ...current],
     );
     setError("");
+    await loadRuns();
     return data.adjustment as JournalAdjustment;
   }
   async function uploadEvidence(
@@ -609,6 +633,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     }
     setEvidence((current) => [data.evidence, ...current]);
     setNotice("Supporting evidence attached.");
+    await loadRuns();
   }
   function startAdjustment(matchId: string) {
     setAdjustmentDraftMatchId(matchId);
@@ -628,6 +653,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     }
     setEvidence((current) => current.filter((item) => item.id !== id));
     setNotice("Supporting evidence removed.");
+    await loadRuns();
   }
   function exportRun() {
     if (!selected) return;
@@ -858,6 +884,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
             adjustments={adjustments}
             setAdjustments={setAdjustments}
             evidence={evidence}
+            auditEvents={auditEvents}
+            refreshAudit={refreshAudit}
             saveAdjustment={saveAdjustment}
             uploadEvidence={uploadEvidence}
             deleteEvidence={deleteEvidence}
@@ -970,6 +998,13 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 )}
               </div>
             </section>
+            {selected.profileId && (
+              <section className="continuity-banner">
+                <ClockCounterClockwise weight="duotone" />
+                <div><strong>{selected.priorReconciliationId ? "Prior-period continuity connected" : "First period for this recurring account"}</strong><span>{selected.priorReconciliationId ? "The prior ending balance was carried into this roll-forward. Open the prior period to trace the handoff." : "Once this period is certified, its ending balance will become the starting point for the next reconciliation."}</span></div>
+                {selected.priorReconciliationId && <button onClick={() => navigateDashboard("reconciliation", { reconciliationId: selected.priorReconciliationId })}>Open prior period <ArrowRight /></button>}
+              </section>
+            )}
             <ControlSummary
               source={sourceBalance}
               comparison={comparisonBalance}
@@ -1075,6 +1110,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 deleteEvidence={deleteEvidence}
               />
             </section>
+            <AuditTimeline events={auditEvents.filter((event) => event.entityId === selected.id)} />
           </>
         )}
       </main>
@@ -1720,6 +1756,9 @@ function AccountPlan({
     materiality: 0,
     preparer: "",
     reviewer: "",
+    dueOffset: 5,
+    subsidiary: "",
+    requiredSupport: "",
   });
   const [error, setError] = useState("");
 
@@ -1729,7 +1768,7 @@ function AccountPlan({
     const response = await fetch("/api/reconciliation-profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, dimensions: { subsidiary: form.subsidiary }, requiredSupport: form.requiredSupport.split(",").map((item) => item.trim()).filter(Boolean) }),
     });
     const data = await response.json();
     if (!response.ok)
@@ -1885,6 +1924,18 @@ function AccountPlan({
                 placeholder="Name or role"
               />
             </label>
+            <label>
+              Due days after period end
+              <input type="number" min="-30" max="90" value={form.dueOffset} onChange={(e) => setForm({ ...form, dueOffset: Number(e.target.value) })} />
+            </label>
+            <label>
+              Subsidiary or entity <small>Optional dimension</small>
+              <input value={form.subsidiary} onChange={(e) => setForm({ ...form, subsidiary: e.target.value })} placeholder="Example: US parent" />
+            </label>
+            <label>
+              Required support <small>Optional, comma separated</small>
+              <input value={form.requiredSupport} onChange={(e) => setForm({ ...form, requiredSupport: e.target.value })} placeholder="Bank statement, deposit detail" />
+            </label>
           </div>
           {error && <p className="error">{error}</p>}
           <button className="primary" onClick={createProfile}>
@@ -1921,7 +1972,10 @@ function AccountPlan({
                   <dt>Materiality</dt>
                   <dd>{money.format(profile.materiality)}</dd>
                 </div>
+                <div><dt>Due</dt><dd>{profile.dueOffset} days after period end</dd></div>
+                {profile.dimensions.subsidiary && <div><dt>Entity</dt><dd>{profile.dimensions.subsidiary}</dd></div>}
               </dl>
+              {profile.requiredSupport.length > 0 && <p className="required-support"><strong>Required support:</strong> {profile.requiredSupport.join(" · ")}</p>}
               <div className="account-plan-status">
                 <span
                   className={`reconciliation-state ${lastRun?.status || "draft"}`}
@@ -2810,6 +2864,7 @@ function CertificationPanel({
   update: (patch: Partial<ReconciliationRun>) => void;
 }) {
   const [conclusion, setConclusion] = useState(run.conclusion || "");
+  const [changeReason, setChangeReason] = useState("");
   useEffect(
     () => setConclusion(run.conclusion || ""),
     [run.id, run.conclusion],
@@ -2846,6 +2901,14 @@ function CertificationPanel({
         onBlur={() => update({ conclusion })}
         placeholder="Describe the result, remaining timing items, and any adjustments posted."
       />
+      {(run.status === "review" || run.status === "certified") && (
+        <label className="change-reason-field">
+          <span>Reason for requesting changes or reopening <InfoTip text="This explanation is preserved in the audit history and tells the preparer exactly what needs attention." /></span>
+          <input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Attach the August bank statement and explain the outstanding deposit." />
+        </label>
+      )}
+      {run.lockedAt && <div className="certification-lock"><LockKey weight="fill" /><span><strong>Certified work is locked</strong><small>Any change to balances, results, or the conclusion automatically requires another review.</small></span></div>}
+      {run.changeReason && run.status === "changes_requested" && <div className="change-request-note"><Warning weight="fill" /><span><strong>Changes requested</strong><small>{run.changeReason}</small></span></div>}
       <footer>
         <span>
           <b className={`workflow-status ${run.status}`}>{statusLabel}</b>
@@ -2858,14 +2921,16 @@ function CertificationPanel({
         </span>
         <div>
           {run.status === "review" ? (
-            <button onClick={() => update({ status: "changes_requested" })}>
+            <button disabled={!changeReason.trim()} onClick={() => update({ status: "changes_requested", changeReason })}>
               Request changes
             </button>
           ) : run.status === "certified" ? (
             <button
+              disabled={!changeReason.trim()}
               onClick={() =>
                 update({
                   status: "changes_requested",
+                  changeReason,
                   certification: {
                     ...run.certification,
                     reviewedBy: undefined,
@@ -2907,6 +2972,16 @@ function CertificationPanel({
           </button>
         </div>
       </footer>
+      <p className="review-control-note">When another teammate is available, the person who prepared this reconciliation cannot certify it. One-person workspaces are clearly recorded as self-reviewed.</p>
+    </section>
+  );
+}
+
+function AuditTimeline({ events, context = "reconciliation" }: { events: AuditEvent[]; context?: "reconciliation" | "close" }) {
+  return (
+    <section className="panel audit-timeline">
+      <div className="panel-title"><div><h2>Audit history</h2><InfoTip text="A permanent, append-only record of preparation, review, certification, reopening, and important changes." /><p>Who did what, and when. These entries cannot be edited or deleted.</p></div></div>
+      {events.length ? <div className="audit-event-list">{events.slice(0, 20).map((event) => <article key={event.id}><span className="audit-dot" /><div><strong>{event.summary}</strong><small>{event.actorName} · {new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div> : <div className="empty-small">Activity will appear as this {context} moves through the workflow.</div>}
     </section>
   );
 }
@@ -2973,6 +3048,8 @@ function CloseHub({
   adjustments,
   setAdjustments,
   evidence,
+  auditEvents,
+  refreshAudit,
   saveAdjustment,
   uploadEvidence,
   deleteEvidence,
@@ -2988,6 +3065,8 @@ function CloseHub({
   adjustments: JournalAdjustment[];
   setAdjustments: (adjustments: JournalAdjustment[]) => void;
   evidence: EvidenceFile[];
+  auditEvents: AuditEvent[];
+  refreshAudit: () => Promise<void>;
   saveAdjustment: (payload: Partial<JournalAdjustment>, id?: string) => Promise<JournalAdjustment | undefined>;
   uploadEvidence: (file: File | undefined, options: { reconciliationId?: string; adjustmentId?: string; matchId?: string }) => void;
   deleteEvidence: (id: string) => void;
@@ -3009,6 +3088,9 @@ function CloseHub({
       preview: SpreadsheetPreview;
     }>(),
     [varianceError, setVarianceError] = useState("");
+  const [closeMessage, setCloseMessage] = useState(""),
+    [closeConclusion, setCloseConclusion] = useState(""),
+    [reopenReason, setReopenReason] = useState("");
   const selected = periods.find((period) => period.id === selectedCloseId);
   async function create() {
     const tasks = makeTasks(periodEnd, periodType, user.name),
@@ -3039,11 +3121,20 @@ function CloseHub({
     setPeriods(
       periods.map((period) => (period.id === selected.id ? next : period)),
     );
-    await fetch(`/api/close-periods/${selected.id}`, {
+    const response = await fetch(`/api/close-periods/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+    const data = await response.json();
+    if (!response.ok) {
+      setCloseMessage(data.error || "That close update could not be saved.");
+      setPeriods(periods);
+      return false;
+    }
+    setCloseMessage("");
+    await refreshAudit();
+    return true;
   }
   async function connectReconciliation(runId: string, closePeriodId?: string) {
     const response = await fetch(`/api/reconciliations/${runId}`, {
@@ -3104,17 +3195,26 @@ function CloseHub({
       const preview = await parseSpreadsheetFile(file, sheetName);
       setVarianceUpload({ file, preview });
       const account =
-          preview.headers.find((h) => /account|name/i.test(h)) ||
+          preview.headers.find((h) => /account|name|description/i.test(h)) ||
           preview.headers[0],
         current =
-          preview.headers.find((h) => /current/i.test(h)) || preview.headers[1],
+          preview.headers.find((h) => /current|ending|this period/i.test(h)) || preview.headers[1],
         prior =
           preview.headers.find((h) => /prior|previous/i.test(h)) ||
           preview.headers[2];
+      if (!account || !current || !prior || current === prior) throw new Error("Choose a trial-balance file with account, current balance, and prior balance columns.");
+      const parseBalance = (value: string) => {
+        const text = String(value || "").trim();
+        const negative = /^\(.*\)$/.test(text) || text.startsWith("-");
+        const number = Number(text.replace(/[^\d.,-]/g, "").replace(/[(),-]/g, "").replace(/,/g, ""));
+        return negative ? -number : number;
+      };
       const variances: VarianceItem[] = preview.rows.map((row, index) => {
-        const now = Number(String(row[current] || 0).replace(/[$,]/g, "")),
-          before = Number(String(row[prior] || 0).replace(/[$,]/g, "")),
+        const now = parseBalance(row[current]),
+          before = parseBalance(row[prior]),
           difference = now - before;
+        const priorPeriod = periods.filter((period) => period.id !== selected.id && period.periodEnd < selected.periodEnd).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
+        const priorItem = priorPeriod?.variances.find((item) => item.account === row[account]);
         return {
           id: `v-${index}`,
           account: row[account],
@@ -3123,9 +3223,14 @@ function CloseHub({
           difference,
           percent: before ? (difference / Math.abs(before)) * 100 : 100,
           explanation: "",
-          status: "open",
+          status: "open" as const,
+          owner: user.name,
+          dueDate: selected.periodEnd,
+          percentageThreshold: 10,
+          priorExplanation: priorItem?.explanation || "",
         };
-      });
+      }).filter((item) => item.account && Number.isFinite(item.current) && Number.isFinite(item.prior));
+      if (!variances.length) throw new Error("No valid account balances were found. Use account, current balance, and prior balance columns.");
       setVarianceError("");
       save({ variances });
     } catch (error) {
@@ -3315,11 +3420,16 @@ function CloseHub({
         <button onClick={printClosePacket}><Printer /> Close packet</button>
         <button
           className={`primary close-period-action${selected.status === "closed" ? " closed" : ""}`}
-          disabled={readiness < 100}
-          onClick={() => save({ status: "closed" })}
+          disabled={selected.status === "open" ? (readiness < 100 || !closeConclusion.trim()) : !reopenReason.trim()}
+          onClick={() => selected.status === "closed" ? save({ status: "open", reopenReason }) : save({ status: "closed", closeConclusion })}
         >
-          {selected.status === "closed" ? "Closed" : "Close period"}
+          {selected.status === "closed" ? "Reopen period" : "Close period"}
         </button>
+      </section>
+      <section className="panel close-approval-panel">
+        <div><h2>{selected.status === "closed" ? "Closed period control" : "Final close approval"}</h2><InfoTip text={selected.status === "closed" ? "Reopening changes the period back to open and permanently records the reason and person responsible." : "The close conclusion documents the final result. Taliqor also verifies tasks, reconciliations, material variances, and adjustments before closing."} /><p>{selected.status === "closed" ? `Closed ${selected.closedAt ? new Date(selected.closedAt).toLocaleString() : ""}. Reopen only when additional accounting work is required.` : "Summarize the completed close before locking the period."}</p></div>
+        {selected.status === "closed" ? <label>Reason to reopen<input value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} placeholder="Explain what changed and why the period must reopen" /></label> : <label>Close conclusion<textarea value={closeConclusion} onChange={(event) => setCloseConclusion(event.target.value)} placeholder="Example: All required accounts are reconciled, material variances are explained, and approved adjustments are posted." /></label>}
+        {closeMessage && <p className="error">{closeMessage}</p>}
       </section>
       <section className="metrics">
         <Metric
@@ -3539,19 +3649,19 @@ function CloseHub({
                 <div>
                   <strong>{variance.account}</strong>
                   <small>
-                    {money.format(variance.prior)} →{" "}
-                    {money.format(variance.current)} ·{" "}
-                    {variance.percent.toFixed(1)}%
+                    {displayMoney(variance.prior)} →{" "}
+                    {displayMoney(variance.current)} ·{" "}
+                    {Number.isFinite(variance.percent) ? variance.percent.toFixed(1) : "—"}%
                   </small>
                 </div>
                 <b
                   className={
-                    Math.abs(variance.difference) > selected.materiality
+                    Math.abs(variance.difference) > selected.materiality || Math.abs(variance.percent) > (variance.percentageThreshold ?? 10)
                       ? "warn"
                       : ""
                   }
                 >
-                  {money.format(variance.difference)}
+                  {displayMoney(variance.difference)}
                 </b>
                 <input
                   value={variance.explanation}
@@ -3562,7 +3672,7 @@ function CloseHub({
                           ? {
                               ...item,
                               explanation: e.target.value,
-                              status: e.target.value ? "reviewed" : "open",
+                              status: "open",
                             }
                           : item,
                       ),
@@ -3570,6 +3680,12 @@ function CloseHub({
                   }
                   placeholder="Explain variance"
                 />
+                <div className="variance-controls">
+                  <input aria-label="Variance owner" value={variance.owner || ""} onChange={(e) => save({ variances: selected.variances.map((item) => item.id === variance.id ? { ...item, owner: e.target.value, status: "open" } : item) })} placeholder="Owner" />
+                  <label>Percent threshold<input type="number" min="0" value={variance.percentageThreshold ?? 10} onChange={(e) => save({ variances: selected.variances.map((item) => item.id === variance.id ? { ...item, percentageThreshold: Number(e.target.value), status: "open" } : item) })} /></label>
+                  <button disabled={!variance.explanation.trim()} className={variance.status === "reviewed" ? "variance-reviewed" : ""} onClick={() => save({ variances: selected.variances.map((item) => item.id === variance.id ? { ...item, status: item.status === "reviewed" ? "open" : "reviewed", reviewedBy: item.status === "reviewed" ? undefined : user.name, reviewedAt: item.status === "reviewed" ? undefined : new Date().toISOString() } : item) })}>{variance.status === "reviewed" ? "Reviewed ✓" : "Mark reviewed"}</button>
+                </div>
+                {variance.priorExplanation && <small className="prior-explanation">Prior-period explanation: {variance.priorExplanation}</small>}
               </div>
             ))
           ) : (
@@ -3579,6 +3695,7 @@ function CloseHub({
           )}
         </div>
       </section>
+      <AuditTimeline context="close" events={auditEvents.filter((event) => event.entityId === selected.id)} />
     </>
   );
 }
@@ -3713,7 +3830,7 @@ function Wizard(props: {
             <h2>Confirm the column mapping</h2>
             <p>
               We suggested mappings from the headers and sample values. Amount
-              is required; everything else improves matching.
+              or debit/credit is required. Optional accounting fields make reviews and future integrations clearer.
             </p>
             <div className="mapping-grid">
               <Mapping
@@ -3784,15 +3901,7 @@ function Mapping({
           </small>
         </span>
       </div>
-      {(
-        [
-          "id",
-          "date",
-          "description",
-          "amount",
-          "currency",
-        ] as (keyof ColumnMapping)[]
-      ).map((field) => (
+      {(["id", "date", "description", "amount", "currency"] as (keyof ColumnMapping)[]).map((field) => (
         <label key={field}>
           <span>
             {field[0].toUpperCase() + field.slice(1)}
@@ -3814,6 +3923,19 @@ function Mapping({
           </small>
         </label>
       ))}
+      <details className="optional-mapping-fields">
+        <summary>Optional accounting fields <small>Account, entity, department, and more</small></summary>
+        {(["account", "debit", "credit", "entity", "department", "location", "class", "subsidiary", "postingPeriod"] as (keyof ColumnMapping)[]).map((field) => (
+          <label key={field}>
+            <span>{field === "postingPeriod" ? "Posting period" : field[0].toUpperCase() + field.slice(1)}</span>
+            <select value={state.mapping[field]} onChange={(e) => change(side, field, e.target.value)}>
+              <option value="">Not mapped</option>
+              {state.preview.headers.map((header) => <option key={header}>{header}</option>)}
+            </select>
+            <small>{state.mapping[field] ? `Sample: ${state.preview.rows[0]?.[state.mapping[field]] || "—"}` : "Optional"}</small>
+          </label>
+        ))}
+      </details>
     </div>
   );
 }
@@ -3912,7 +4034,10 @@ function closeReadiness(
         !["posted", "no_entry"].includes(item.status) &&
         item.lines.reduce((sum, line) => sum + line.debit, 0) > period.materiality,
     );
-  return hasOpenMaterialAdjustment ? Math.min(base, 99) : base;
+  const hasOpenMaterialVariance = period.variances.some((item) =>
+    (Math.abs(item.difference) > period.materiality || Math.abs(item.percent) > (item.percentageThreshold ?? 10)) && item.status !== "reviewed",
+  );
+  return hasOpenMaterialAdjustment || hasOpenMaterialVariance ? Math.min(base, 99) : base;
 }
 function greeting() {
   const hour = new Date().getHours();

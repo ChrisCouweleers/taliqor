@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requestBodyTooLarge } from "@/lib/security";
 import { shapeAdjustment, validateJournalLines } from "@/lib/adjustments";
+import { appendAuditEvent, userDisplayName } from "@/lib/audit";
 
 async function context() {
   const supabase = await createClient();
@@ -31,8 +32,9 @@ export async function POST(request: Request) {
     if (!reconciliation) return NextResponse.json({ error: "Reconciliation unavailable." }, { status: 400 });
   }
   if (body.closePeriodId) {
-    const { data: period } = await supabase.from("close_periods").select("id").eq("id", body.closePeriodId).eq("organization_id", membership.organization_id).maybeSingle();
+    const { data: period } = await supabase.from("close_periods").select("id,status").eq("id", body.closePeriodId).eq("organization_id", membership.organization_id).maybeSingle();
     if (!period) return NextResponse.json({ error: "Close period unavailable." }, { status: 400 });
+    if (period.status === "closed") return NextResponse.json({ error: "Reopen the close before adding an adjustment." }, { status: 409 });
   }
   const { data, error } = await supabase.from("journal_adjustments").insert({
     organization_id: membership.organization_id,
@@ -47,7 +49,11 @@ export async function POST(request: Request) {
     recurring: Boolean(body.recurring),
     auto_reverse: Boolean(body.autoReverse),
     reversal_date: body.reversalDate || null,
-    prepared_by: String(body.preparedBy || "").trim().slice(0, 120),
+    prepared_by: userDisplayName(user),
+    prepared_by_id: user.id,
   }).select().single();
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ adjustment: shapeAdjustment(data) });
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (data.reconciliation_id) await supabase.from("reconciliations").update({ status: "changes_requested", locked_at: null, reviewed_by_id: null, change_reason: "An adjusting journal entry changed after submission." }).eq("id", data.reconciliation_id).in("status", ["review", "certified"]);
+  await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "adjustment", entityId: data.id, action: "created", summary: "Adjusting journal entry prepared", details: { reconciliationId: data.reconciliation_id, closePeriodId: data.close_period_id } });
+  return NextResponse.json({ adjustment: shapeAdjustment(data) });
 }

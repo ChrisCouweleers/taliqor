@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { appendAuditEvent, userDisplayName } from "@/lib/audit";
 
 const shape = (item: Record<string, any>) => ({
   id: item.id, name: item.name, periodType: item.period_type, periodEnd: item.period_end,
   status: item.status, materiality: Number(item.materiality || 0), tasks: item.tasks || [],
   variances: item.variances || [], closedAt: item.closed_at, createdAt: item.created_at,
+  closeConclusion: item.close_conclusion || "", reopenReason: item.reopen_reason || "",
+  closedBy: item.closed_by, reopenedAt: item.reopened_at,
 });
 
 async function context() {
@@ -58,5 +61,6 @@ export async function POST(request: Request) {
     });
   }
   if (seeded.length) await supabase.from("journal_adjustments").upsert(seeded, { onConflict: "close_period_id,origin_adjustment_id,entry_kind", ignoreDuplicates: true });
+  await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "close", entityId: data.id, action: "created", summary: "Close workspace created", details: { periodEnd: data.period_end, periodType: data.period_type } });
   return NextResponse.json({ period: shape(data), seededAdjustments: seeded.length });
 }

@@ -6,8 +6,17 @@ const aliases: Record<CanonicalField, string[]> = {
   id: ["id", "transaction id", "transaction_id", "reference", "reference id", "order id", "order_id", "invoice", "payment id", "ref", "number"],
   date: ["date", "transaction date", "transaction_date", "posting date", "posted", "created at", "created_at", "paid at", "settled at", "settlement date"],
   description: ["description", "memo", "customer", "customer name", "merchant", "name", "details", "narrative", "payee", "account name"],
-  amount: ["amount", "total", "gross", "net", "value", "credit", "debit", "payment amount", "deposit"],
+  amount: ["amount", "total", "gross", "net", "value", "payment amount", "deposit"],
   currency: ["currency", "ccy", "currency code", "iso currency"],
+  account: ["account", "account number", "account no", "gl account", "general ledger account"],
+  debit: ["debit", "debits", "debit amount"],
+  credit: ["credit", "credits", "credit amount"],
+  entity: ["entity", "vendor", "customer", "payee", "counterparty"],
+  department: ["department", "dept", "cost center", "cost centre"],
+  location: ["location", "site", "store", "branch"],
+  class: ["class", "category", "business unit"],
+  subsidiary: ["subsidiary", "company", "legal entity"],
+  postingPeriod: ["posting period", "accounting period", "period"],
 };
 
 function splitRow(line: string, delimiter: string) {
@@ -51,14 +60,14 @@ function looksNumeric(value: string) { return /^\(?[-+]?[$€£]?\s*[\d,.]+\)?$/
 function looksDate(value: string) { return !looksNumeric(value) && Number.isFinite(Date.parse(value)); }
 
 export function inferMapping(preview: CsvPreview): ColumnMapping {
-  const result = { id: "", date: "", description: "", amount: "", currency: "" };
+  const result: ColumnMapping = { id: "", date: "", description: "", amount: "", currency: "", account: "", debit: "", credit: "", entity: "", department: "", location: "", class: "", subsidiary: "", postingPeriod: "" };
   (Object.keys(result) as CanonicalField[]).forEach((field) => {
     let best = "", bestScore = 0;
     preview.headers.forEach((header) => {
       const normalized = normalize(header);
       let score = aliases[field].includes(normalized) ? 100 : aliases[field].some((alias) => normalized.includes(alias) || alias.includes(normalized)) ? 65 : 0;
       const values = preview.rows.slice(0, 20).map((row) => row[header]).filter(Boolean);
-      if (field === "amount" && values.length && values.filter(looksNumeric).length / values.length > .8) score += 25;
+      if (["amount", "debit", "credit"].includes(field) && values.length && values.filter(looksNumeric).length / values.length > .8) score += 25;
       if (field === "date" && values.length && values.filter(looksDate).length / values.length > .8) score += 25;
       if (field === "currency" && values.some((value) => /^[A-Z]{3}$/.test(value))) score += 35;
       if (field === "id" && values.length && new Set(values).size === values.length) score += 8;
@@ -79,13 +88,16 @@ function parseAmount(value: string) {
 }
 
 export function normalizeRows(preview: CsvPreview, mapping: ColumnMapping, source: string): Transaction[] {
-  if (!mapping.amount) throw new Error("Choose an amount column for both files.");
+  if (!mapping.amount && !mapping.debit && !mapping.credit) throw new Error("Choose an amount column, or map debit and credit columns, for both files.");
   return preview.rows.map((raw, index) => {
-    const amount = parseAmount(raw[mapping.amount] || "");
+    const debit = mapping.debit ? parseAmount(raw[mapping.debit] || "0") : 0;
+    const credit = mapping.credit ? parseAmount(raw[mapping.credit] || "0") : 0;
+    const amount = mapping.amount ? parseAmount(raw[mapping.amount] || "") : debit - credit;
     if (!Number.isFinite(amount)) throw new Error(`Invalid amount in ${source}, row ${index + 2}.`);
     const rawDate = mapping.date ? raw[mapping.date] : "";
     const parsedDate = rawDate && Number.isFinite(Date.parse(rawDate)) ? new Date(rawDate).toISOString().slice(0, 10) : rawDate;
-    return { id: mapping.id ? raw[mapping.id] || `${source}-${index + 1}` : `${source}-${index + 1}`, date: parsedDate, description: mapping.description ? raw[mapping.description] || "Transaction" : "Transaction", amount, currency: mapping.currency ? raw[mapping.currency] || "USD" : "USD", source, raw };
+    const optional = (field: CanonicalField) => mapping[field] ? raw[mapping[field]] || undefined : undefined;
+    return { id: mapping.id ? raw[mapping.id] || `${source}-${index + 1}` : `${source}-${index + 1}`, date: parsedDate, description: mapping.description ? raw[mapping.description] || "Transaction" : "Transaction", amount, currency: mapping.currency ? raw[mapping.currency] || "USD" : "USD", account: optional("account"), debit, credit, entity: optional("entity"), department: optional("department"), location: optional("location"), class: optional("class"), subsidiary: optional("subsidiary"), postingPeriod: optional("postingPeriod"), source, raw };
   });
 }
 
