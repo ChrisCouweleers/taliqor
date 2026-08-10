@@ -7,6 +7,7 @@ import {
   Clock,
   FileCsv,
   Lightning,
+  LockKey,
   ShieldCheck,
   Sparkle,
   Stack,
@@ -106,6 +107,11 @@ export function Homepage() {
                 <strong>Built with finance teams</strong>
                 <span>for the way revenue actually moves</span>
               </div>
+            </div>
+            <div className="homepage-security-badges" aria-label="Taliqor security protections">
+              <span><LockKey weight="fill" /> Private by default</span>
+              <span><ShieldCheck weight="fill" /> Verified login</span>
+              <span><CheckCircle weight="fill" /> Organization isolated</span>
             </div>
           </div>
 
@@ -393,24 +399,27 @@ export function Homepage() {
                 Controls you can prove.
               </h2>
               <p>
-                Role-based access, a complete audit trail, and encryption at
-                rest and in transit are part of the foundation—not an
-                afterthought.
+                Private file storage, organization-isolated access, verified
+                email login, and encryption at rest and in transit are part of
+                the foundation—not an afterthought.
               </p>
               <div className="security-points">
                 <span>
                   <Check />
-                  Read-only connections
+                  Private CSV storage
                 </span>
                 <span>
                   <Check />
-                  End-to-end audit trail
+                  Six-digit login verification
                 </span>
                 <span>
                   <Check />
-                  Secure by design
+                  Defensive upload validation
                 </span>
               </div>
+              <Link className="security-learn-link" href="/security">
+                See how Taliqor protects your data <ArrowRight />
+              </Link>
             </div>
           </div>
           <div className="cta-card" id="contact">
@@ -434,12 +443,36 @@ export function Homepage() {
         </section>
       </main>
 
-      <footer>
-        <Link href="/">
-          <Logo />
-        </Link>
-        <p>Revenue, reconciled.</p>
-        <span>© 2026 Taliqor, Inc.</span>
+      <footer className="site-footer">
+        <div className="footer-brand">
+          <Link href="/" aria-label="Taliqor home"><Logo /></Link>
+          <p>Revenue reconciliation and financial close clarity for modern finance teams.</p>
+          <div className="footer-trust">
+            <span><LockKey weight="fill" /> Private storage</span>
+            <span><ShieldCheck weight="fill" /> Verified login</span>
+          </div>
+        </div>
+        <div className="footer-column">
+          <strong>Product</strong>
+          <a href="#product">Overview</a>
+          <a href="#workflow">How it works</a>
+          <Link href="/security">Security</Link>
+        </div>
+        <div className="footer-column">
+          <strong>Account</strong>
+          <Link href="/signup">Create workspace</Link>
+          <Link href="/login">Log in</Link>
+        </div>
+        <div className="footer-column">
+          <strong>Legal</strong>
+          <Link href="/privacy">Privacy policy</Link>
+          <Link href="/terms">Terms of use</Link>
+          <Link href="/security">Security</Link>
+        </div>
+        <div className="footer-bottom">
+          <span>© 2026 Taliqor. All rights reserved.</span>
+          <span>Open beta · Free workspace</span>
+        </div>
       </footer>
     </div>
   );
