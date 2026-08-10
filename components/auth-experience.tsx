@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Bank, Check, CheckCircle, Eye, EyeSlash, FileCsv, Fingerprint, Lightning, LockKey, ShieldCheck, TrendUp, Warning } from "@phosphor-icons/react";
 import { Logo, Mark } from "./logo";
 import { createClient } from "@/lib/supabase/client";
@@ -11,6 +11,17 @@ type Mode = "login" | "signup";
 export function AuthExperience({ mode }: { mode: Mode }) {
   const signup = mode === "signup";
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [showPassword, setShowPassword] = useState(false);
+  const [authStep, setAuthStep] = useState<"login" | "forgot" | "update">("login");
+
+  useEffect(() => {
+    if (signup || !new URLSearchParams(window.location.search).has("recovery")) return;
+    setAuthStep("update");
+    const supabase = createClient();
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setAuthStep("update");
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [signup]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
@@ -18,9 +29,23 @@ export function AuthExperience({ mode }: { mode: Mode }) {
     const email = String(form.get("email") || "").trim(), password = String(form.get("password") || "");
     try {
       const supabase = createClient();
-      if (signup) {
+      if (!signup && authStep === "forgot") {
+        const { error: authError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/login?recovery=1` });
+        if (authError) throw authError;
+        setError("Recovery email sent. Open the link in your inbox to choose a new password.");
+        return;
+      } else if (!signup && authStep === "update") {
+        const confirmation = String(form.get("confirmPassword") || "");
+        if (password !== confirmation) throw new Error("The passwords do not match.");
+        const { error: authError } = await supabase.auth.updateUser({ password });
+        if (authError) throw authError;
+        location.assign("/dashboard");
+        return;
+      } else if (signup) {
         const firstName = String(form.get("firstName") || "").trim(), lastName = String(form.get("lastName") || "").trim(), company = String(form.get("company") || "").trim();
-        const { data, error: authError } = await supabase.auth.signUp({ email, password, options: { data: { first_name: firstName, last_name: lastName, name: `${firstName} ${lastName}`.trim(), company, organization_name: company || `${firstName}'s workspace` }, emailRedirectTo: `${location.origin}/dashboard` } });
+        const contextResponse = await fetch("/api/signup-context", { cache: "no-store" });
+        const context = contextResponse.ok ? await contextResponse.json() as { ip?: string | null; location?: string | null } : {};
+        const { data, error: authError } = await supabase.auth.signUp({ email, password, options: { data: { first_name: firstName, last_name: lastName, name: `${firstName} ${lastName}`.trim(), company, organization_name: company || `${firstName}'s workspace`, signup_ip: context.ip ?? null, signup_location: context.location ?? null }, emailRedirectTo: `${location.origin}/dashboard` } });
         if (authError) throw authError;
         if (!data.session) { setError("Your workspace is ready. Check your inbox to confirm your email."); return; }
       } else {
@@ -52,15 +77,17 @@ export function AuthExperience({ mode }: { mode: Mode }) {
 
         <section className="auth-terminal">
           <div className="terminal-cap"><span><Mark small/><b>TALIQOR / AUTH</b></span><span><i/>ENCRYPTED</span></div>
-          <div className="terminal-heading"><span className="form-index">{signup ? "CREATE / 001" : "ACCESS / 001"}</span><h2>{signup ? "Open your free workspace" : "Welcome back"}</h2><p>{signup ? "No card. No trial clock. Just clearer books." : "Authenticate to continue your close."}</p></div>
+          <div className="terminal-heading"><span className="form-index">{signup ? "CREATE / 001" : authStep === "forgot" ? "RECOVER / 001" : authStep === "update" ? "RESET / 002" : "ACCESS / 001"}</span><h2>{signup ? "Open your free workspace" : authStep === "forgot" ? "Recover your account" : authStep === "update" ? "Choose a new password" : "Welcome back"}</h2><p>{signup ? "No card. No trial clock. Just clearer books." : authStep === "forgot" ? "We’ll send a secure recovery link to your work email." : authStep === "update" ? "Use at least eight characters for your new password." : "Authenticate to continue your close."}</p></div>
           <form onSubmit={submit}>
             {signup && <div className="name-fields"><Field label="First name" name="firstName" placeholder="Marnie" autoComplete="given-name"/><Field label="Last name" name="lastName" placeholder="Kestrel" autoComplete="family-name"/></div>}
             {signup && <Field label="Company" hint="Optional" name="company" placeholder="Blue Otter Foundry" autoComplete="organization" required={false}/>}
-            <Field label="Work email" name="email" type="email" placeholder={signup ? "marnie@blueotterfoundry.com" : "ivo@thimbleworks.co"} autoComplete="email"/>
-            <label className="field"><span>Password {signup && <small>8+ characters</small>}</span><div className="password-field"><input required minLength={8} name="password" type={showPassword ? "text" : "password"} placeholder={signup ? "A phrase no ledger could guess" : "The secret one"} autoComplete={signup ? "new-password" : "current-password"}/><button type="button" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeSlash/> : <Eye/>}</button></div></label>
-            {!signup && <div className="forgot-row"><label><input type="checkbox"/>Keep me signed in</label><button type="button" onClick={()=>setError("Password recovery is coming next. Contact your workspace owner for access.")}>Forgot password?</button></div>}
-            {error && <div className={error.startsWith("Your workspace") ? "auth-message success" : "auth-message"}>{error}</div>}
-            <button className="auth-submit" disabled={busy}>{busy ? <><i/>Securing workspace…</> : <>{signup ? "Create my workspace" : "Enter Taliqor"}<ArrowRight/></>}</button>
+            {authStep !== "update" && <Field label="Work email" name="email" type="email" placeholder={signup ? "marnie@blueotterfoundry.com" : "ivo@thimbleworks.co"} autoComplete="email"/>}
+            {authStep !== "forgot" && <label className="field"><span>{authStep === "update" ? "New password" : "Password"} {(signup || authStep === "update") && <small>8+ characters</small>}</span><div className="password-field"><input required minLength={8} name="password" type={showPassword ? "text" : "password"} placeholder={signup ? "A phrase no ledger could guess" : authStep === "update" ? "Your new password" : "The secret one"} autoComplete={signup || authStep === "update" ? "new-password" : "current-password"}/><button type="button" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeSlash/> : <Eye/>}</button></div></label>}
+            {authStep === "update" && <Field label="Confirm new password" name="confirmPassword" type="password" placeholder="Repeat your new password" autoComplete="new-password"/>}
+            {!signup && authStep === "login" && <div className="forgot-row"><label><input type="checkbox"/>Keep me signed in</label><button type="button" onClick={()=>{ setAuthStep("forgot"); setError(""); }}>Forgot password?</button></div>}
+            {!signup && authStep === "forgot" && <div className="forgot-row"><span/><button type="button" onClick={()=>{ setAuthStep("login"); setError(""); }}>Back to login</button></div>}
+            {error && <div className={error.startsWith("Your workspace") || error.startsWith("Recovery email") ? "auth-message success" : "auth-message"}>{error}</div>}
+            <button className="auth-submit" disabled={busy}>{busy ? <><i/>Securing workspace…</> : <>{signup ? "Create my workspace" : authStep === "forgot" ? "Send recovery email" : authStep === "update" ? "Save new password" : "Enter Taliqor"}<ArrowRight/></>}</button>
           </form>
           {signup && <small className="terms">By creating an account, you agree to safeguard the financial data you upload.</small>}
           <div className="terminal-foot"><span><Fingerprint/>Session protected</span><span>taliqor.com</span></div>

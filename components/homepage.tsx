@@ -26,7 +26,7 @@ export function Homepage() {
   return (
     <div className="marketing">
       <div className="announcement">
-        <span><Sparkle weight="fill" /> Taliqor is now in private beta</span>
+        <span><Sparkle weight="fill" /> Taliqor is now in open beta</span>
         <a href="#contact">Join the waitlist <ArrowRight /></a>
       </div>
 

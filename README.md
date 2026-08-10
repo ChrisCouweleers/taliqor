@@ -1,35 +1,31 @@
 # Taliqor
 
-Free spreadsheet reconciliation for finance teams. Users can create an account, upload two CSV exports, confirm column mappings, review explainable matches and exceptions, save decisions, and export the results.
+> Revenue, reconciled.
 
-## Local setup
+Taliqor gives finance teams one clear view of the money recorded across payment processors, bank accounts, and accounting records. It turns scattered exports into a reviewable reconciliation, so teams can close the books with confidence.
 
-1. Create a Supabase project.
-2. In the Supabase SQL editor, run `supabase/migrations/0001_initial.sql`.
-3. Copy `.env.example` to `.env.local` and add the project URL and publishable/anon key from **Project Settings → API**.
-4. Start the app:
+## 👋 Who it’s for
 
-```powershell
-npm install
-npm run dev
-```
+- 💼 Finance and accounting teams closing the books
+- 🚀 Growing companies with revenue spread across several sources
+- 🔎 Operators who need to find missing, duplicated, or mismatched transactions
+- 🤝 Teams that want a shared, repeatable review process
 
-Open [http://localhost:3000](http://localhost:3000).
+## ✨ What Taliqor does
 
-For the fastest local sign-up flow, disable **Confirm email** under Supabase Authentication → Providers → Email. If confirmation stays enabled, users must confirm their email before entering the dashboard.
+1. 📥 **Bring in your records** — upload exports from the systems you already use.
+2. 🔗 **Match transactions** — see which records belong together, even when dates or references differ.
+3. 🚩 **Surface exceptions** — focus attention on gaps, duplicates, and amount differences.
+4. ✅ **Record decisions** — review results and keep a clear history of what was resolved.
+5. 📤 **Share the outcome** — export clean results for your close and reporting workflows.
 
-## Data and security
+## 🎯 Why teams use it
 
-- Authentication is managed by Supabase Auth.
-- Every new account receives its own organization.
-- Postgres row-level security restricts runs, templates, and files to organization members.
-- Original CSV files are stored in the private `reconciliation-files` bucket.
-- Parsed rows and reconciliation evidence are stored with each run.
-- No service-role key is used in the application.
+- **Less spreadsheet chasing** — bring the full reconciliation into one place.
+- **Faster reviews** — spend time on exceptions instead of checking every line.
+- **Clear explanations** — understand why records matched and why others need attention.
+- **A calmer close** — know what is complete, what is open, and what changed.
 
-## Verification
+## 🔓 Open beta
 
-```powershell
-npm run build
-```
-
+Taliqor is currently in open beta. Create a free workspace, reconcile your first two files, and help shape what comes next.
