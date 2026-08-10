@@ -47,7 +47,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
         <p>{signup ? "Free to use. No card, trial clock, or sales call." : "Log in to continue your reconciliation work."}</p>
         <form onSubmit={submit}>
           {signup && <div className="name-fields"><Field label="First name" name="firstName" placeholder="Daniel" autoComplete="given-name"/><Field label="Last name" name="lastName" placeholder="Morgan" autoComplete="family-name"/></div>}
-          {signup && <Field label="Company" hint="Optional" name="company" placeholder="Northline Finance" autoComplete="organization" required={false}/>} 
+          {signup && <Field label="Company" hint="Optional" name="company" placeholder="Northline Finance" autoComplete="organization" required={false}/>}
           <Field label="Work email" name="email" type="email" placeholder="you@company.com" autoComplete="email"/>
           <label className="field"><span>Password {signup && <small>8+ characters</small>}</span><div className="password-field"><input required minLength={8} name="password" type={showPassword ? "text" : "password"} placeholder={signup ? "Create a secure password" : "Enter your password"} autoComplete={signup ? "new-password" : "current-password"}/><button type="button" onClick={()=>setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeSlash/> : <Eye/>}</button></div></label>
           {!signup && <div className="forgot-row"><label><input type="checkbox"/>Keep me signed in</label><button type="button" onClick={()=>setError("Password recovery is coming next. Contact your workspace owner for access.")}>Forgot password?</button></div>}
