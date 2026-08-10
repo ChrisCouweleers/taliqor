@@ -2212,6 +2212,16 @@ button {
   grid-column: 2/-1;
   color: #8791a3;
 }
+.run-source-label {
+  grid-column: 2/-1;
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e8f7f4;
+  color: #087866;
+  font-size: 12px;
+  font-weight: 750;
+}
 .live-dot {
   width: 7px;
   height: 7px;
@@ -2422,6 +2432,20 @@ button {
   color: #17627d;
   font-size: 12px;
   font-weight: 700;
+}
+.recurring-label,
+.one-off-label {
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e8f7f4;
+  color: #087866;
+  font-size: 12px;
+  font-weight: 700;
+}
+.one-off-label {
+  background: #f0f3f6;
+  color: #5d697b;
 }
 .reconciliation-state {
   justify-self: end;
@@ -3090,6 +3114,15 @@ button {
   border-radius: 7px;
   font-size: 12px;
   margin-top: 12px !important;
+}
+.banner.notice {
+  margin-top: 0 !important;
+  background: #e8f7f4;
+  color: #087866 !important;
+}
+.banner.notice button {
+  color: inherit;
+  cursor: pointer;
 }
 @media (max-width: 760px) {
   .auth-shell {

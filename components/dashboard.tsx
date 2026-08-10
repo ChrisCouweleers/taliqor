@@ -467,6 +467,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
     if (!response.ok) {
       setError("That decision could not be saved.");
       await loadRuns();
+    } else {
+      setError("");
     }
   }
   async function updateRun(patch: Partial<ReconciliationRun>) {
@@ -483,7 +485,37 @@ export function Dashboard({ user }: { user: UserInfo }) {
     if (!response.ok) {
       setError("That reconciliation update could not be saved.");
       await loadRuns();
+    } else {
+      setError("");
     }
+  }
+  async function makeRunRecurring(run: ReconciliationRun) {
+    if (run.profileId) return;
+    setError("");
+    const response = await fetch("/api/reconciliation-profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: run.name.replace(/\s+reconciliation$/i, ""),
+        accountType: "other",
+        method: run.method,
+        frequency: "monthly",
+        risk: "medium",
+        materiality: run.materiality,
+        preparer: run.certification.preparedBy || user.name,
+        reviewer: run.certification.reviewedBy || "",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.error || "This reconciliation could not be made recurring.");
+      return;
+    }
+    setReconciliationProfiles((current) =>
+      [...current, data.profile].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    await updateRun({ profileId: data.profile.id });
+    setNotice("Added to Recurring accounts. Its settings will be ready for the next period.");
   }
   async function updateException(matchId: string, patch: Partial<Match>) {
     if (!selected) return;
@@ -668,7 +700,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
                     : view === "history"
                       ? "Every run, decision, and result in one place."
                       : view === "accounts"
-                        ? "Define the recurring accounts, owners, reviewers, and controls behind each period."
+                        ? "Set up work once, then start the next period with the right owner, reviewer, and controls already filled in."
                         : view === "close"
                           ? "Run a controlled month-end, quarter-end, or year-end close."
                           : "Your free Taliqor workspace."}
@@ -681,7 +713,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
             {view !== "close" && (
               <button className="primary" onClick={() => setWizard(true)}>
                 <UploadSimple />
-                New reconciliation
+                New one-off reconciliation
               </button>
             )}
           </div>
@@ -690,6 +722,14 @@ export function Dashboard({ user }: { user: UserInfo }) {
           <div className="banner error">
             {error}
             <button onClick={() => setError("")}>
+              <X />
+            </button>
+          </div>
+        )}
+        {notice && !wizard && (
+          <div className="banner notice">
+            {notice}
+            <button aria-label="Dismiss notification" onClick={() => setNotice("")}>
               <X />
             </button>
           </div>
@@ -735,7 +775,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
             runs={runs}
             openHistory={() => navigateDashboard("history")}
             start={(profile) => {
-              setRunName(`${profile.name} reconciliation`);
+              const period = new Date().toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              });
+              setRunName(`${profile.name} — ${period}`);
               setRunOptions((current) => ({
                 ...current,
                 profileId: profile.id,
@@ -771,6 +815,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
                   {selected.closePeriodId &&
                     ` · Used in ${closePeriods.find((period) => period.id === selected.closePeriodId)?.name || "close"}`}
                 </small>
+                <span className="run-source-label">
+                  {selected.profileId
+                    ? `Recurring · ${reconciliationProfiles.find((profile) => profile.id === selected.profileId)?.name || "account"}`
+                    : "One-off reconciliation"}
+                </span>
               </div>
               <div>
                 <select
@@ -795,6 +844,12 @@ export function Dashboard({ user }: { user: UserInfo }) {
                   <DownloadSimple />
                   CSV
                 </button>
+                {!selected.profileId && (
+                  <button onClick={() => makeRunRecurring(selected)}>
+                    <Copy />
+                    Make recurring
+                  </button>
+                )}
               </div>
             </section>
             <ControlSummary
@@ -1428,6 +1483,9 @@ function History({
                         ?.name || "close"}
                     </span>
                   )}
+                  <span className={run.profileId ? "recurring-label" : "one-off-label"}>
+                    {run.profileId ? "Recurring account" : "One-off"}
+                  </span>
                 </div>
                 <div className="history-stats">
                   <span className={`reconciliation-state ${run.status}`}>
@@ -1503,12 +1561,13 @@ function AccountPlan({
       <div className="account-plan-head">
         <div>
           <span>
-            RECURRING CONTROL{" "}
-            <InfoTip text="A reconciliation plan is the recurring list of accounts your team must substantiate each month, quarter, or year." />
+            RECURRING ACCOUNTS{" "}
+            <InfoTip text="Recurring accounts remember who prepares and reviews the work, how often it happens, and which controls to reuse. Each period still gets its own reconciliation." />
           </span>
-          <h2>Know what must be reconciled before the close begins.</h2>
+          <h2>Set it up once. Start the next period from here.</h2>
           <p>
-            Assign ownership and controls once, then reuse them every period.
+            These are reusable account setups—not completed reconciliations. Use
+            “Start this period” to create the actual work for a new period.
           </p>
         </div>
         <button className="primary" onClick={() => setCreating(!creating)}>
@@ -1687,7 +1746,7 @@ function AccountPlan({
                 <small>{lastRun?.periodEnd || "No prior period"}</small>
               </div>
               <button className="primary" onClick={() => start(profile)}>
-                Start reconciliation <ArrowRight />
+                Start this period <ArrowRight />
               </button>
             </article>
           );
@@ -1714,13 +1773,13 @@ function ReconciliationTabs({
   return (
     <div className="reconciliation-tabs" aria-label="Reconciliation views">
       <button className={active === "plan" ? "active" : ""} onClick={openPlan}>
-        Plan
+        Recurring accounts
       </button>
       <button
         className={active === "history" ? "active" : ""}
         onClick={openHistory}
       >
-        History
+        Reconciliation history
       </button>
     </div>
   );
@@ -2956,12 +3015,12 @@ function Wizard(props: {
               />
             </label>
             <label className="run-name">
-              Reconciliation plan
+              Recurring account
               <select
                 value={props.profileId}
                 onChange={(event) => props.setProfile(event.target.value)}
               >
-                <option value="">One-time reconciliation</option>
+                <option value="">One-off — do not reuse this setup</option>
                 {props.profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
                     {profile.accountNumber ? `${profile.accountNumber} · ` : ""}
@@ -2969,6 +3028,11 @@ function Wizard(props: {
                   </option>
                 ))}
               </select>
+              <small>
+                {props.profileId
+                  ? "Account settings, method, and materiality are carried into this period."
+                  : "Use this for work that is not expected to repeat every month, quarter, or year."}
+              </small>
             </label>
             <label className="run-name">
               Use in close

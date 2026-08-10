@@ -43,6 +43,7 @@ export async function PATCH(
     ["comparisonBalance", "comparison_balance"],
     ["rules", "rules"],
     ["closePeriodId", "close_period_id"],
+    ["profileId", "profile_id"],
   ] as const)
     if (body[clientKey] !== undefined)
       update[databaseKey] = body[clientKey] || null;
