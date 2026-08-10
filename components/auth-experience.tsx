@@ -28,7 +28,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
     [error, setError] = useState(""),
     [showPassword, setShowPassword] = useState(false);
   const [authStep, setAuthStep] = useState<
-    "login" | "forgot" | "update" | "otp-request" | "otp-verify"
+    "login" | "forgot" | "update" | "otp-verify"
   >("login");
   const [inviteToken, setInviteToken] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
@@ -59,7 +59,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
       password = String(form.get("password") || "");
     try {
       const supabase = createClient();
-      if (!signup && authStep === "otp-request") {
+      if (!signup && authStep === "login") {
         const { error: authError } = await supabase.auth.signInWithOtp({
           email,
           options: { shouldCreateUser: false },
@@ -99,7 +99,9 @@ export function AuthExperience({ mode }: { mode: Mode }) {
           password,
         });
         if (authError) throw authError;
-        location.assign("/dashboard");
+        await supabase.auth.signOut({ scope: "local" });
+        setAuthStep("login");
+        setError("Password updated. Enter your email to receive a login code.");
         return;
       } else if (signup) {
         const firstName = String(form.get("firstName") || "").trim(),
@@ -138,12 +140,6 @@ export function AuthExperience({ mode }: { mode: Mode }) {
           );
           return;
         }
-      } else {
-        const { error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (authError) throw authError;
       }
       location.assign("/dashboard");
     } catch (caught) {
@@ -327,9 +323,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                   ? "CREATE / 001"
                   : authStep === "forgot"
                     ? "RECOVER / 001"
-                    : authStep === "otp-request"
-                      ? "CODE / 001"
-                      : authStep === "otp-verify"
+                    : authStep === "otp-verify"
                         ? "VERIFY / 002"
                     : authStep === "update"
                       ? "RESET / 002"
@@ -342,9 +336,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                     : "Open your free workspace"
                   : authStep === "forgot"
                     ? "Recover your account"
-                    : authStep === "otp-request"
-                      ? "Login with an email code"
-                      : authStep === "otp-verify"
+                    : authStep === "otp-verify"
                         ? "Enter your login code"
                     : authStep === "update"
                       ? "Choose a new password"
@@ -357,13 +349,11 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                     : "No card. No trial clock. Just clearer books."
                   : authStep === "forgot"
                     ? "We’ll send a secure recovery link to your work email."
-                    : authStep === "otp-request"
-                      ? "We’ll email you a one-time six-digit code. No password needed."
-                      : authStep === "otp-verify"
+                    : authStep === "otp-verify"
                         ? `Enter the code sent to ${otpEmail}.`
                     : authStep === "update"
                       ? "Use at least eight characters for your new password."
-                      : "Authenticate to continue your close."}
+                      : "Enter your email and we’ll send a one-time six-digit login code."}
               </p>
             </div>
             <form onSubmit={submit}>
@@ -406,7 +396,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                   autoComplete="email"
                 />
               )}
-              {(signup || authStep === "login" || authStep === "update") && (
+              {(signup || authStep === "update") && (
                 <label className="field">
                   <span>
                     {authStep === "update" ? "New password" : "Password"}{" "}
@@ -468,15 +458,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
               )}
               {!signup && authStep === "login" && (
                 <div className="forgot-row">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthStep("otp-request");
-                      setError("");
-                    }}
-                  >
-                    Email me a login code
-                  </button>
+                  <span>Every login is verified by email.</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -488,7 +470,7 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                   </button>
                 </div>
               )}
-              {!signup && ["forgot", "otp-request", "otp-verify"].includes(authStep) && (
+              {!signup && ["forgot", "otp-verify"].includes(authStep) && (
                 <div className="forgot-row">
                   <span />
                   <button
@@ -508,7 +490,8 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                   className={
                     error.startsWith("Your workspace") ||
                     error.startsWith("Recovery email") ||
-                    error.startsWith("A six-digit")
+                    error.startsWith("A six-digit") ||
+                    error.startsWith("Password updated")
                       ? "auth-message success"
                       : "auth-message"
                   }
@@ -528,13 +511,11 @@ export function AuthExperience({ mode }: { mode: Mode }) {
                       ? "Create my workspace"
                       : authStep === "forgot"
                         ? "Send recovery email"
-                        : authStep === "otp-request"
-                          ? "Send login code"
-                          : authStep === "otp-verify"
+                        : authStep === "otp-verify"
                             ? "Verify and log in"
                         : authStep === "update"
                           ? "Save new password"
-                          : "Enter Taliqor"}
+                          : "Email my login code"}
                     <ArrowRight />
                   </>
                 )}

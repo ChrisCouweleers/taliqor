@@ -20,7 +20,7 @@
   font-weight: 800;
 }
 .control-summary h2 {
-  font: 700 19px Manrope;
+  font: 700 19px var(--font-manrope);
   margin: 5px 0;
 }
 .control-summary p {
@@ -42,7 +42,7 @@
 }
 .control-summary dd {
   margin: 5px 0 0;
-  font: 700 15px Manrope;
+  font: 700 15px var(--font-manrope);
 }
 .certification {
   margin-bottom: 18px;
@@ -278,7 +278,7 @@
 }
 .close-library-head h2 {
   margin: 7px 0 4px;
-  font: 700 23px Manrope;
+  font: 700 23px var(--font-manrope);
 }
 .close-library-head p {
   color: #b5c2d3;
@@ -325,7 +325,7 @@
 }
 .close-library-grid h3 {
   margin: 22px 0 17px;
-  font: 700 18px Manrope;
+  font: 700 18px var(--font-manrope);
 }
 .close-progress-track {
   height: 7px;
@@ -375,7 +375,7 @@
   color: #07162f;
 }
 .close-head h2 {
-  font: 700 22px Manrope;
+  font: 700 22px var(--font-manrope);
   margin: 5px 0 2px;
 }
 .close-head p {
@@ -392,7 +392,7 @@
   text-align: center;
 }
 .readiness strong {
-  font: 700 17px Manrope;
+  font: 700 17px var(--font-manrope);
 }
 .readiness span {
   font-size: 12px;
