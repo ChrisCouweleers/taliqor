@@ -1125,9 +1125,13 @@ function WorkspaceOverview({
   const closeDone =
     activeClose?.tasks.filter((task) => task.status === "done").length || 0;
   const closeTotal = activeClose?.tasks.length || 0;
-  const closePercent = closeTotal
-    ? Math.round((closeDone / closeTotal) * 100)
-    : 0;
+  const closePercent = activeClose ? closeReadiness(activeClose, runs) : 0;
+  const closeRuns = activeClose
+    ? runs.filter((run) => run.closePeriodId === activeClose.id)
+    : [];
+  const certifiedCloseRuns = closeRuns.filter(
+    (run) => run.status === "certified",
+  ).length;
   const reconciliationRate = allResults.length
     ? Math.round((resolved / allResults.length) * 1000) / 10
     : 0;
@@ -1170,7 +1174,7 @@ function WorkspaceOverview({
         />
         <Metric
           label="Current close"
-          help="Progress on the active close, based on checklist completion and certified reconciliations."
+          help="Close readiness uses the same calculation as Close Hub: checklist completion supplies 70%, and connected certified reconciliations supply 30%."
           value={activeClose ? `${closePercent}%` : "—"}
           trend={activeClose?.name || "No close period started"}
         />
@@ -1219,7 +1223,7 @@ function WorkspaceOverview({
           <div className="panel-title">
             <div>
               <h2>Close readiness</h2>
-              <InfoTip text="A snapshot of checklist completion and variance review for the active close period." />
+              <InfoTip text="The checklist supplies 70% of readiness. Connected reconciliations must be certified to supply the final 30%." />
               <p>{activeClose?.name || "Start your first close period."}</p>
             </div>
           </div>
@@ -1234,7 +1238,7 @@ function WorkspaceOverview({
                 }
               >
                 <strong>{closePercent}%</strong>
-                <span>complete</span>
+                <span>close ready</span>
               </div>
               <dl>
                 <div>
@@ -1244,14 +1248,9 @@ function WorkspaceOverview({
                   </dd>
                 </div>
                 <div>
-                  <dt>Variance reviews</dt>
+                  <dt>Certified reconciliations</dt>
                   <dd>
-                    {
-                      activeClose.variances.filter(
-                        (item) => item.status === "reviewed",
-                      ).length
-                    }
-                    /{activeClose.variances.length}
+                    {certifiedCloseRuns}/{closeRuns.length}
                   </dd>
                 </div>
               </dl>
@@ -2628,12 +2627,7 @@ function CloseHub({
             const certifiedRuns = connected.filter(
               (run) => run.status === "certified",
             ).length;
-            const progress = Math.round(
-              (taskDone / Math.max(period.tasks.length, 1)) * 70 +
-                (connected.length
-                  ? (certifiedRuns / connected.length) * 30
-                  : 0),
-            );
+            const progress = closeReadiness(period, runs);
             return (
               <button key={period.id} onClick={() => selectClose(period.id)}>
                 <div>
@@ -2686,10 +2680,7 @@ function CloseHub({
           item.status !== "matched" &&
           Math.abs(item.left.amount) > selected.materiality,
       ).length,
-    readiness = Math.round(
-      (done / Math.max(selected.tasks.length, 1)) * 70 +
-        (linked.length ? (certified / linked.length) * 30 : 0),
-    );
+    readiness = closeReadiness(selected, runs);
   return (
     <>
       <section className="close-head">
@@ -3242,6 +3233,24 @@ function reconciliationMethodLabel(method: ReconciliationRun["method"]) {
     account_analysis: "Account analysis",
     variance: "Variance analysis",
   }[method];
+}
+function closeReadiness(period: ClosePeriod, runs: ReconciliationRun[]) {
+  const completedTasks = period.tasks.filter(
+    (task) => task.status === "done",
+  ).length;
+  const connectedRuns = runs.filter(
+    (run) => run.closePeriodId === period.id,
+  );
+  const certifiedRuns = connectedRuns.filter(
+    (run) => run.status === "certified",
+  ).length;
+  const checklistProgress = period.tasks.length
+    ? completedTasks / period.tasks.length
+    : 0;
+  const certificationProgress = connectedRuns.length
+    ? certifiedRuns / connectedRuns.length
+    : 0;
+  return Math.round(checklistProgress * 70 + certificationProgress * 30);
 }
 function greeting() {
   const hour = new Date().getHours();
