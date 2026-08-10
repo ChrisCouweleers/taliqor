@@ -21,7 +21,6 @@ import {
   MagnifyingGlass,
   Moon,
   Printer,
-  Question,
   Rows,
   SealCheck,
   SignOut,
@@ -1002,10 +1001,15 @@ function Metric({
   );
 }
 
-function InfoTip({ text }: { text: string }) {
+function InfoTip({
+  text,
+  className = "",
+}: {
+  text: string;
+  className?: string;
+}) {
   return (
-    <span className="info-tip" tabIndex={0} aria-label={text}>
-      <Question weight="bold" />
+    <span className={`info-tip ${className}`} tabIndex={0} aria-label={text}>
       <span role="tooltip">{text}</span>
     </span>
   );
@@ -2350,7 +2354,10 @@ function CloseHub({
       <section className="panel close-create">
         <CalendarCheck weight="duotone" />
         <h2>Start a controlled close</h2>
-        <InfoTip text="A close workspace combines the period checklist, connected reconciliations, variance explanations, and final approval." />
+        <InfoTip
+          className="close-create-help"
+          text="A close workspace combines the period checklist, connected reconciliations, variance explanations, and final approval."
+        />
         <p>
           Generate a reusable checklist for month-end, quarter-end, or year-end.
         </p>
@@ -2385,19 +2392,17 @@ function CloseHub({
             />
           </label>
           <label>
-            Materiality threshold
+            <span className="field-label-with-help">
+              Materiality threshold
+              <InfoTip text="Dollar difference that requires attention. Example: $500 flags variances over $500." />
+            </span>
             <input
               type="number"
               min="0"
               step="1"
               value={materiality}
               onChange={(e) => setMateriality(Number(e.target.value))}
-              aria-describedby="materiality-help"
             />
-            <small id="materiality-help">
-              Dollar difference that requires attention. Example: $500 flags
-              variances over $500.
-            </small>
           </label>
         </div>
         <div className="close-create-actions">

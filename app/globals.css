@@ -256,8 +256,8 @@ header p,
   gap: 5px;
 }
 .info-tip {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   border: 1px solid #bdc9d5;
   border-radius: 50%;
   display: inline-grid;
@@ -267,10 +267,15 @@ header p,
   position: relative;
   vertical-align: middle;
   flex: 0 0 auto;
+  font:
+    800 11px/1 Arial,
+    sans-serif;
 }
-.info-tip > svg {
-  width: 11px;
-  height: 11px;
+.info-tip:before {
+  content: "?";
+  display: block;
+  line-height: 1;
+  transform: translateY(-0.2px);
 }
 .info-tip > span {
   width: 245px;
@@ -306,6 +311,11 @@ header p,
   opacity: 1;
   visibility: visible;
   transform: translate(-50%, 0);
+}
+.panel-title h2:has(+ .info-tip),
+.certification h2:has(+ .info-tip),
+.control-summary h2:has(+ .info-tip) {
+  display: inline;
 }
 .metric-icon {
   width: 31px;

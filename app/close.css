@@ -164,6 +164,21 @@
 .close-create {
   text-align: center;
   padding: 50px;
+  position: relative;
+}
+.close-create-help {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+}
+.close-create-help > span {
+  left: auto;
+  right: 0;
+  transform: translateY(4px);
+}
+.close-create-help:hover > span,
+.close-create-help:focus-visible > span {
+  transform: translateY(0);
 }
 .close-create > svg {
   font-size: 48px;
@@ -183,11 +198,10 @@
   font-size: 12px;
   font-weight: 700;
 }
-.close-create label small {
-  color: #7a8798;
-  font-weight: 500;
-  line-height: 1.4;
-  max-width: 190px;
+.field-label-with-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .close-create input,
 .close-create select {
