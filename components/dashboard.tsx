@@ -99,6 +99,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
       ReconciliationProfile[]
     >([]);
   const [view, setView] = useState<View>("overview"),
+    [activeCloseId, setActiveCloseId] = useState(""),
     [loading, setLoading] = useState(true),
     [wizard, setWizard] = useState(false),
     [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -124,6 +125,48 @@ export function Dashboard({ user }: { user: UserInfo }) {
   useEffect(() => {
     loadRuns();
   }, []);
+  useEffect(() => {
+    function restoreFromUrl() {
+      const params = new URLSearchParams(location.search);
+      const requested = params.get("view") as View | null;
+      const allowed: View[] = [
+        "overview",
+        "reconciliation",
+        "history",
+        "accounts",
+        "exceptions",
+        "close",
+        "settings",
+      ];
+      setView(
+        requested && allowed.includes(requested) ? requested : "overview",
+      );
+      const reconciliationId = params.get("reconciliation");
+      if (reconciliationId) setSelectedId(reconciliationId);
+      setActiveCloseId(params.get("close") || "");
+    }
+    restoreFromUrl();
+    if (!new URLSearchParams(location.search).has("view")) {
+      history.replaceState({}, "", "/dashboard?view=overview");
+    }
+    addEventListener("popstate", restoreFromUrl);
+    return () => removeEventListener("popstate", restoreFromUrl);
+  }, []);
+
+  function navigateDashboard(
+    nextView: View,
+    options: { reconciliationId?: string; closeId?: string } = {},
+  ) {
+    const params = new URLSearchParams({ view: nextView });
+    if (options.reconciliationId) {
+      params.set("reconciliation", options.reconciliationId);
+      setSelectedId(options.reconciliationId);
+    }
+    setActiveCloseId(options.closeId || "");
+    if (options.closeId) params.set("close", options.closeId);
+    setView(nextView);
+    history.pushState({}, "", `/dashboard?${params.toString()}`);
+  }
   useEffect(() => {
     const saved = localStorage.getItem("taliqor-theme");
     const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -357,7 +400,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
       setRuns((current) => [data.run, ...current]);
       setSelectedId(data.run.id);
       setWizardStep(3);
-      setView("reconciliation");
+      navigateDashboard("reconciliation", { reconciliationId: data.run.id });
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Reconciliation failed.",
@@ -523,35 +566,37 @@ export function Dashboard({ user }: { user: UserInfo }) {
           <Nav
             active={view === "overview"}
             icon={<House weight="fill" />}
-            onClick={() => setView("overview")}
+            onClick={() => navigateDashboard("overview")}
           >
             Overview
           </Nav>
           <Nav
             active={view === "history"}
             icon={<Rows />}
-            onClick={() => setView("history")}
+            onClick={() => navigateDashboard("history")}
           >
             Reconciliations
           </Nav>
           <Nav
             active={view === "accounts"}
             icon={<FileCsv />}
-            onClick={() => setView("accounts")}
+            onClick={() => navigateDashboard("accounts")}
           >
             Reconciliation plan
           </Nav>
           <Nav
             active={view === "exceptions"}
             icon={<Warning />}
-            onClick={() => setView("exceptions")}
+            onClick={() =>
+              navigateDashboard("exceptions", { reconciliationId: selectedId })
+            }
           >
             Exceptions <b>{exceptions}</b>
           </Nav>
           <Nav
             active={view === "close"}
             icon={<CalendarCheck />}
-            onClick={() => setView("close")}
+            onClick={() => navigateDashboard("close")}
           >
             Close Hub
           </Nav>
@@ -574,7 +619,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 role="menuitem"
                 className={view === "settings" ? "active" : ""}
                 onClick={() => {
-                  setView("settings");
+                  navigateDashboard("settings");
                   setProfileOpen(false);
                 }}
               >
@@ -669,9 +714,10 @@ export function Dashboard({ user }: { user: UserInfo }) {
             runs={runs}
             setRuns={setRuns}
             user={user}
+            selectedCloseId={activeCloseId}
+            selectClose={(closeId) => navigateDashboard("close", { closeId })}
             openReconciliation={(id) => {
-              setSelectedId(id);
-              setView("reconciliation");
+              navigateDashboard("reconciliation", { reconciliationId: id });
             }}
           />
         ) : view === "settings" ? (
@@ -686,8 +732,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
             runs={runs}
             periods={closePeriods}
             select={(id) => {
-              setSelectedId(id);
-              setView("reconciliation");
+              navigateDashboard("reconciliation", { reconciliationId: id });
             }}
           />
         ) : view === "accounts" ? (
@@ -711,10 +756,9 @@ export function Dashboard({ user }: { user: UserInfo }) {
             runs={runs}
             periods={closePeriods}
             openReconciliation={(id) => {
-              setSelectedId(id);
-              setView("reconciliation");
+              navigateDashboard("reconciliation", { reconciliationId: id });
             }}
-            openClose={() => setView("close")}
+            openClose={() => navigateDashboard("close")}
             start={() => setWizard(true)}
           />
         ) : !selected ? (
@@ -737,7 +781,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
               <div>
                 <select
                   value={selected.id}
-                  onChange={(e) => setSelectedId(e.target.value)}
+                  onChange={(e) =>
+                    navigateDashboard("reconciliation", {
+                      reconciliationId: e.target.value,
+                    })
+                  }
                 >
                   {runs.map((run) => (
                     <option key={run.id} value={run.id}>
@@ -2176,6 +2224,8 @@ function CloseHub({
   runs,
   setRuns,
   user,
+  selectedCloseId,
+  selectClose,
   openReconciliation,
 }: {
   periods: ClosePeriod[];
@@ -2183,10 +2233,11 @@ function CloseHub({
   runs: ReconciliationRun[];
   setRuns: (runs: ReconciliationRun[]) => void;
   user: UserInfo;
+  selectedCloseId: string;
+  selectClose: (id: string) => void;
   openReconciliation: (id: string) => void;
 }) {
-  const [selectedId, setSelectedId] = useState(""),
-    [creating, setCreating] = useState(!periods.length),
+  const [creating, setCreating] = useState(!periods.length),
     [name, setName] = useState(""),
     [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10)),
     [periodType, setPeriodType] = useState<"month" | "quarter" | "year">(
@@ -2194,7 +2245,7 @@ function CloseHub({
     ),
     [materiality, setMateriality] = useState(0),
     [reconciliationToConnect, setReconciliationToConnect] = useState("");
-  const selected = periods.find((period) => period.id === selectedId);
+  const selected = periods.find((period) => period.id === selectedCloseId);
   async function create() {
     const tasks = makeTasks(periodEnd, periodType, user.name),
       response = await fetch("/api/close-periods", {
@@ -2211,7 +2262,7 @@ function CloseHub({
       data = await response.json();
     if (response.ok) {
       setPeriods([data.period, ...periods]);
-      setSelectedId(data.period.id);
+      selectClose(data.period.id);
       setCreating(false);
     }
   }
@@ -2397,7 +2448,7 @@ function CloseHub({
                   : 0),
             );
             return (
-              <button key={period.id} onClick={() => setSelectedId(period.id)}>
+              <button key={period.id} onClick={() => selectClose(period.id)}>
                 <div>
                   <span className={`close-state ${period.status}`}>
                     {period.status}
@@ -2455,13 +2506,13 @@ function CloseHub({
   return (
     <>
       <section className="close-head">
-        <button className="close-back" onClick={() => setSelectedId("")}>
+        <button className="close-back" onClick={() => selectClose("")}>
           <ArrowLeft /> All closes
         </button>
         <div>
           <select
             value={selected.id}
-            onChange={(e) => setSelectedId(e.target.value)}
+            onChange={(e) => selectClose(e.target.value)}
           >
             {periods.map((period) => (
               <option key={period.id} value={period.id}>
