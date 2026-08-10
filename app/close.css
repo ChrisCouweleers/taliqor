@@ -305,6 +305,18 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  border: 1px solid #b9dfd8;
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+.upload-mini:hover {
+  background: #d9f2ed;
+  color: #066f63;
+  border-color: #73c8ba;
+  transform: translateY(-1px);
 }
 .checklist-actions {
   display: flex;
@@ -417,6 +429,34 @@
   background: #123256;
   border-color: #123256;
 }
+.close-head .close-period-action {
+  background: #22c7b0;
+  color: #041a20;
+  border-color: #65ddcc;
+  box-shadow: 0 5px 15px rgb(0 0 0 / 24%);
+}
+.close-head .close-period-action:hover:not(:disabled) {
+  background: #63e0cf;
+  color: #03171c;
+  border-color: #9aeee2;
+  box-shadow: 0 8px 19px rgb(0 0 0 / 31%);
+}
+.close-head .close-period-action:disabled {
+  background: #53667e;
+  color: #fff;
+  border-color: #7589a1;
+  opacity: 1;
+}
+.close-head .close-period-action.closed {
+  background: #e4edf7;
+  color: #10233b;
+  border-color: #fff;
+}
+.close-head .close-period-action.closed:hover {
+  background: #fff;
+  color: #07142f;
+  border-color: #fff;
+}
 
 [data-theme="dark"] .control-summary {
   background: #332b1c;
@@ -473,6 +513,16 @@
   background: #214039;
   border-color: #4e8a7f;
 }
+[data-theme="dark"] .upload-mini {
+  background: #183b38;
+  color: #83e4d5;
+  border-color: #3c756d;
+}
+[data-theme="dark"] .upload-mini:hover {
+  background: #23534d;
+  color: #c0fff5;
+  border-color: #65ad9f;
+}
 [data-theme="dark"] .certification button,
 [data-theme="dark"] .close-head button,
 [data-theme="dark"] .close-create button {
@@ -486,6 +536,27 @@
   background: #19b9a3;
   color: #061a24;
   border-color: #19b9a3;
+}
+[data-theme="dark"] .close-head .close-period-action {
+  background: #32cdb7;
+  color: #03191e;
+  border-color: #70e3d3;
+}
+[data-theme="dark"] .close-head .close-period-action:hover:not(:disabled) {
+  background: #6be4d3;
+  color: #021519;
+  border-color: #a1eee3;
+}
+[data-theme="dark"] .close-head .close-period-action:disabled {
+  background: #52667e;
+  color: #fff;
+  border-color: #7b8ea5;
+  opacity: 1;
+}
+[data-theme="dark"] .close-head .close-period-action.closed {
+  background: #e6eef8;
+  color: #0b1c31;
+  border-color: #fff;
 }
 [data-theme="dark"] .close-create input,
 [data-theme="dark"] .close-create select,

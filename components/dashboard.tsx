@@ -11,6 +11,7 @@ import {
   ChartLineUp,
   Check,
   CheckCircle,
+  Copy,
   ClockCounterClockwise,
   DownloadSimple,
   FileCsv,
@@ -24,7 +25,9 @@ import {
   SignOut,
   Sparkle,
   Sun,
+  Trash,
   UploadSimple,
+  UserPlus,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -51,7 +54,14 @@ import {
 import { reconcile } from "@/lib/reconcile";
 import { createClient } from "@/lib/supabase/client";
 
-type UserInfo = { name: string; email: string; organizationName: string };
+type UserInfo = {
+  id: string;
+  name: string;
+  email: string;
+  organizationId: string;
+  organizationName: string;
+  role: "owner" | "member";
+};
 type UploadState = { file: File; preview: CsvPreview; mapping: ColumnMapping };
 type View =
   | "overview"
@@ -663,7 +673,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 >
                   {runs.map((run) => (
                     <option key={run.id} value={run.id}>
-                      {run.name}
+                      {run.name} — {reconciliationStatusLabel(run.status)}
                     </option>
                   ))}
                 </select>
@@ -1181,13 +1191,17 @@ function Results({
                 ) : (
                   <div className="row-actions">
                     <button
+                      className="resolve-action"
                       title="Resolve"
+                      aria-label="Resolve line item"
                       onClick={() => decide(item.id, "approved")}
                     >
                       <Check />
                     </button>
                     <button
+                      className="reject-action"
                       title="Reject"
+                      aria-label="Reject line item"
                       onClick={() => decide(item.id, "rejected")}
                     >
                       <X />
@@ -1234,6 +1248,9 @@ function History({
                 </small>
               </div>
               <div className="history-stats">
+                <span className={`reconciliation-state ${run.status}`}>
+                  {reconciliationStatusLabel(run.status)}
+                </span>
                 <strong>
                   {run.matches.length
                     ? Math.round((resolved / run.matches.length) * 100)
@@ -1301,6 +1318,7 @@ function Settings({
           </div>
         </span>
       </div>
+      <TeamPanel user={user} />
       <div className="panel">
         <h2>Matching rules</h2>
         <p>Set the tolerances used for new reconciliations.</p>
@@ -1387,6 +1405,174 @@ function Settings({
         )}
       </div>
     </section>
+  );
+}
+
+type TeamMember = {
+  id: string;
+  name: string;
+  email: string;
+  role: "owner" | "member";
+  joinedAt: string;
+};
+type TeamInvitation = {
+  id: string;
+  email: string;
+  token: string;
+  status: "pending" | "accepted";
+  expires_at: string;
+  created_at: string;
+};
+
+function TeamPanel({ user }: { user: UserInfo }) {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const pending = invitations.filter((item) => item.status === "pending");
+  const usedSlots =
+    members.filter((item) => item.role === "member").length + pending.length;
+
+  async function loadTeam() {
+    const response = await fetch("/api/team", { cache: "no-store" });
+    const data = await response.json();
+    if (response.ok) {
+      setMembers(data.members || []);
+      setInvitations(data.invitations || []);
+    } else {
+      setMessage(data.error || "Team details could not be loaded.");
+    }
+  }
+
+  useEffect(() => {
+    loadTeam();
+  }, []);
+
+  async function invite() {
+    if (!email.trim()) return;
+    setBusy(true);
+    setMessage("");
+    const response = await fetch("/api/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      setInvitations((current) => [data.invitation, ...current]);
+      setEmail("");
+      setMessage(
+        "Invitation created. Copy the secure link and send it to your teammate.",
+      );
+    } else {
+      setMessage(data.error || "The invitation could not be created.");
+    }
+    setBusy(false);
+  }
+
+  async function copyInvite(token: string) {
+    await navigator.clipboard.writeText(
+      `${location.origin}/signup?invite=${token}`,
+    );
+    setMessage("Invitation link copied.");
+  }
+
+  async function revoke(id: string) {
+    const response = await fetch("/api/team", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (response.ok) {
+      setInvitations((current) => current.filter((item) => item.id !== id));
+      setMessage("Invitation revoked.");
+    } else {
+      const data = await response.json();
+      setMessage(data.error || "The invitation could not be revoked.");
+    }
+  }
+
+  return (
+    <div className="panel team-panel">
+      <div className="team-heading">
+        <div>
+          <h2>Team</h2>
+          <p>Give preparers and reviewers access to the same workspace.</p>
+        </div>
+        <span>{usedSlots}/3 invitation slots used</span>
+      </div>
+      {user.role === "owner" ? (
+        <div className="team-invite">
+          <label>
+            Teammate email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="reviewer@company.com"
+              disabled={usedSlots >= 3}
+            />
+          </label>
+          <button
+            className="primary"
+            disabled={busy || usedSlots >= 3 || !email.trim()}
+            onClick={invite}
+          >
+            <UserPlus />
+            {busy ? "Creating…" : "Create invite"}
+          </button>
+        </div>
+      ) : (
+        <p className="team-note">
+          Only the workspace owner can create invitations.
+        </p>
+      )}
+      {message && (
+        <div className="team-message" aria-live="polite">
+          {message}
+        </div>
+      )}
+      <div className="team-list">
+        {members.map((member) => (
+          <div key={member.id}>
+            <span className="team-avatar">{initials(member.name)}</span>
+            <span>
+              <strong>{member.name}</strong>
+              <small>{member.email}</small>
+            </span>
+            <b>{member.role}</b>
+          </div>
+        ))}
+        {pending.map((invitation) => (
+          <div key={invitation.id} className="pending-invite">
+            <span className="team-avatar pending">@</span>
+            <span>
+              <strong>{invitation.email}</strong>
+              <small>
+                Pending · expires{" "}
+                {new Date(invitation.expires_at).toLocaleDateString()}
+              </small>
+            </span>
+            <div>
+              <button
+                aria-label="Copy invitation link"
+                onClick={() => copyInvite(invitation.token)}
+              >
+                <Copy />
+              </button>
+              <button
+                aria-label="Revoke invitation"
+                className="danger"
+                onClick={() => revoke(invitation.id)}
+              >
+                <Trash />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1806,11 +1992,11 @@ function CloseHub({
         </div>
         <button onClick={() => setCreating(true)}>New period</button>
         <button
-          className="primary"
+          className={`primary close-period-action${selected.status === "closed" ? " closed" : ""}`}
           disabled={readiness < 100}
           onClick={() => save({ status: "closed" })}
         >
-          {selected.status === "closed" ? "Archived" : "Close period"}
+          {selected.status === "closed" ? "Closed" : "Close period"}
         </button>
       </section>
       <section className="metrics">
@@ -1889,7 +2075,7 @@ function CloseHub({
                   <option value="">Attach reconciliation</option>
                   {runs.map((run) => (
                     <option key={run.id} value={run.id}>
-                      {run.name}
+                      {run.name} — {reconciliationStatusLabel(run.status)}
                     </option>
                   ))}
                 </select>

@@ -7,7 +7,7 @@ import {
   Clock,
   FileCsv,
   Lightning,
-  LockKey,
+  ShieldCheck,
   Sparkle,
   Stack,
   TrendUp,
@@ -365,9 +365,23 @@ export function Homepage() {
 
         <section className="security-cta" id="security">
           <div className="security-copy">
-            <span className="security-icon">
-              <LockKey weight="duotone" />
-            </span>
+            <div className="trust-signal" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <span>
+                <ShieldCheck weight="duotone" />
+              </span>
+              <b>
+                <Check weight="bold" />
+              </b>
+              <b>
+                <Check weight="bold" />
+              </b>
+              <b>
+                <Check weight="bold" />
+              </b>
+            </div>
             <div>
               <span className="eyebrow light">
                 <span />
