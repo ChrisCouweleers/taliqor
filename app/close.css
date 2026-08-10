@@ -247,6 +247,65 @@
 .close-grid > .panel {
   padding: 20px;
 }
+.close-reconciliations {
+  margin-top: 18px;
+  padding: 20px;
+}
+.connect-reconciliation {
+  display: flex;
+  gap: 8px;
+}
+.connect-reconciliation select {
+  min-width: 260px;
+  height: 38px;
+  border: 1px solid #cfd8e2;
+  border-radius: 7px;
+  background: #fff;
+  padding: 0 10px;
+}
+.connect-reconciliation button,
+.connected-reconciliations button {
+  min-height: 36px;
+  border: 1px solid #cfd8e2;
+  border-radius: 7px;
+  background: #fff;
+  color: #17233b;
+  padding: 0 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.connected-reconciliations {
+  display: grid;
+  margin-top: 12px;
+}
+.connected-reconciliations > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 11px;
+  align-items: center;
+  min-height: 62px;
+  border-top: 1px solid #edf0f2;
+}
+.connected-reconciliations > div > div {
+  display: grid;
+  gap: 3px;
+}
+.connected-reconciliations small {
+  color: #7e8998;
+}
+.connected-reconciliations button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.connected-reconciliations .disconnect-reconciliation:hover {
+  background: #ffebe8 !important;
+  color: #b42318 !important;
+  border-color: #e98d83 !important;
+}
+.close-empty {
+  margin-top: 14px;
+}
 .task-list {
   display: grid;
 }
@@ -414,6 +473,17 @@
   .rule-grid {
     grid-template-columns: 1fr;
   }
+  .close-reconciliations .panel-title,
+  .connect-reconciliation {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .connect-reconciliation select {
+    min-width: 0;
+  }
+  .connected-reconciliations > div {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .certification button.primary,
@@ -567,4 +637,10 @@
   background: #0e1c2f;
   color: #eef4fb;
   border-color: #385069;
+}
+[data-theme="dark"] .connected-reconciliations > div {
+  border-color: #2b4159;
+}
+[data-theme="dark"] .connected-reconciliations small {
+  color: #aab8ca;
 }

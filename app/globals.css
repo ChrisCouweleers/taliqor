@@ -2299,6 +2299,15 @@ button {
   text-align: right;
   gap: 3px;
 }
+.close-link-label {
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e7f5fb;
+  color: #17627d;
+  font-size: 12px;
+  font-weight: 700;
+}
 .reconciliation-state {
   justify-self: end;
   width: max-content;
@@ -2611,7 +2620,8 @@ button {
   color: #4d596d;
 }
 .auth-card input,
-.run-name input {
+.run-name input,
+.run-name select {
   height: 44px;
   border: 1px solid #dce1e7;
   border-radius: 7px;
@@ -2620,7 +2630,8 @@ button {
   background: white;
 }
 .auth-card input:focus,
-.run-name input:focus {
+.run-name input:focus,
+.run-name select:focus {
   border-color: #11a38f;
   box-shadow: 0 0 0 3px #11a38f15;
 }
@@ -5364,6 +5375,10 @@ button:disabled {
 [data-theme="dark"] .reconciliation-state.certified {
   background: #153f38;
   color: #7ce2d2;
+}
+[data-theme="dark"] .close-link-label {
+  background: #17364b;
+  color: #8bd8f1;
 }
 [data-theme="dark"] .team-heading > span,
 [data-theme="dark"] .team-message,

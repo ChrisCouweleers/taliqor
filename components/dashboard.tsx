@@ -100,6 +100,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
   const [runOptions, setRunOptions] = useState({
     method: "transaction" as ReconciliationRun["method"],
     periodEnd: new Date().toISOString().slice(0, 10),
+    closePeriodId: "",
     materiality: 0,
     sourceBalance: "",
     comparisonBalance: "",
@@ -311,6 +312,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           matches,
           templates: templatePayload,
           periodEnd: runOptions.periodEnd,
+          closePeriodId: runOptions.closePeriodId || undefined,
           method: runOptions.method,
           materiality: runOptions.materiality,
           sourceBalance:
@@ -360,6 +362,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     setRunOptions({
       method: "transaction",
       periodEnd: new Date().toISOString().slice(0, 10),
+      closePeriodId: "",
       materiality: 0,
       sourceBalance: "",
       comparisonBalance: "",
@@ -623,7 +626,12 @@ export function Dashboard({ user }: { user: UserInfo }) {
             periods={closePeriods}
             setPeriods={setClosePeriods}
             runs={runs}
+            setRuns={setRuns}
             user={user}
+            openReconciliation={(id) => {
+              setSelectedId(id);
+              setView("reconciliation");
+            }}
           />
         ) : view === "settings" ? (
           <Settings
@@ -635,6 +643,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
         ) : view === "history" ? (
           <History
             runs={runs}
+            periods={closePeriods}
             select={(id) => {
               setSelectedId(id);
               setView("reconciliation");
@@ -664,6 +673,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
                   {selected.periodEnd ||
                     new Date(selected.createdAt).toLocaleDateString()}{" "}
                   · {selected.leftName} vs {selected.rightName}
+                  {selected.closePeriodId &&
+                    ` · Used in ${closePeriods.find((period) => period.id === selected.closePeriodId)?.name || "close"}`}
                 </small>
               </div>
               <div>
@@ -770,12 +781,24 @@ export function Dashboard({ user }: { user: UserInfo }) {
           left={left}
           right={right}
           runName={runName}
+          periods={closePeriods}
+          closePeriodId={runOptions.closePeriodId}
           error={error}
           notice={notice}
           saving={saving}
           leftRef={leftRef}
           rightRef={rightRef}
           setRunName={setRunName}
+          setClosePeriod={(closePeriodId) => {
+            const period = closePeriods.find(
+              (item) => item.id === closePeriodId,
+            );
+            setRunOptions((current) => ({
+              ...current,
+              closePeriodId,
+              periodEnd: period?.periodEnd || current.periodEnd,
+            }));
+          }}
           chooseFile={chooseFile}
           setMapping={(side, field, value) =>
             side === "left"
@@ -981,6 +1004,8 @@ function WorkspaceOverview({
                   <small>
                     {run.leftName} vs {run.rightName} ·{" "}
                     {run.matches.length - runResolved} open
+                    {run.closePeriodId &&
+                      ` · Used in ${periods.find((period) => period.id === run.closePeriodId)?.name || "close"}`}
                   </small>
                 </div>
                 <div>
@@ -1221,9 +1246,11 @@ function Results({
 }
 function History({
   runs,
+  periods,
   select,
 }: {
   runs: ReconciliationRun[];
+  periods: ClosePeriod[];
   select: (id: string) => void;
 }) {
   return (
@@ -1246,6 +1273,13 @@ function History({
                   {run.leftName} vs {run.rightName} ·{" "}
                   {new Date(run.createdAt).toLocaleString()}
                 </small>
+                {run.closePeriodId && (
+                  <span className="close-link-label">
+                    Used in{" "}
+                    {periods.find((period) => period.id === run.closePeriodId)
+                      ?.name || "close"}
+                  </span>
+                )}
               </div>
               <div className="history-stats">
                 <span className={`reconciliation-state ${run.status}`}>
@@ -1793,12 +1827,16 @@ function CloseHub({
   periods,
   setPeriods,
   runs,
+  setRuns,
   user,
+  openReconciliation,
 }: {
   periods: ClosePeriod[];
   setPeriods: (periods: ClosePeriod[]) => void;
   runs: ReconciliationRun[];
+  setRuns: (runs: ReconciliationRun[]) => void;
   user: UserInfo;
+  openReconciliation: (id: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState(periods[0]?.id || ""),
     [creating, setCreating] = useState(!periods.length),
@@ -1807,7 +1845,8 @@ function CloseHub({
     [periodType, setPeriodType] = useState<"month" | "quarter" | "year">(
       "month",
     ),
-    [materiality, setMateriality] = useState(0);
+    [materiality, setMateriality] = useState(0),
+    [reconciliationToConnect, setReconciliationToConnect] = useState("");
   const selected =
     periods.find((period) => period.id === selectedId) || periods[0];
   async function create() {
@@ -1841,6 +1880,18 @@ function CloseHub({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+  }
+  async function connectReconciliation(runId: string, closePeriodId?: string) {
+    const response = await fetch(`/api/reconciliations/${runId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ closePeriodId: closePeriodId || null }),
+    });
+    if (!response.ok) return;
+    setRuns(
+      runs.map((run) => (run.id === runId ? { ...run, closePeriodId } : run)),
+    );
+    setReconciliationToConnect("");
   }
   function toggle(task: CloseTask) {
     if (!selected) return;
@@ -1954,7 +2005,8 @@ function CloseHub({
     );
   if (!selected) return null;
   const done = selected.tasks.filter((task) => task.status === "done").length,
-    linked = runs.filter((run) => run.periodEnd === selected.periodEnd),
+    linked = runs.filter((run) => run.closePeriodId === selected.id),
+    available = runs.filter((run) => !run.closePeriodId),
     certified = linked.filter((run) => run.status === "certified").length,
     materialExceptions = linked
       .flatMap((run) => run.matches)
@@ -2021,6 +2073,71 @@ function CloseHub({
           value={`${selected.variances.filter((v) => v.status === "reviewed").length}/${selected.variances.length}`}
           trend="reviewed"
         />
+      </section>
+      <section className="panel close-reconciliations">
+        <div className="panel-title">
+          <div>
+            <h2>Reconciliations for this close</h2>
+            <p>
+              Connected reconciliations contribute the final 30% of readiness
+              when certified.
+            </p>
+          </div>
+          <div className="connect-reconciliation">
+            <select
+              value={reconciliationToConnect}
+              onChange={(event) =>
+                setReconciliationToConnect(event.target.value)
+              }
+            >
+              <option value="">Select a reconciliation</option>
+              {available.map((run) => (
+                <option key={run.id} value={run.id}>
+                  {run.name} — {reconciliationStatusLabel(run.status)}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!reconciliationToConnect}
+              onClick={() =>
+                connectReconciliation(reconciliationToConnect, selected.id)
+              }
+            >
+              Connect
+            </button>
+          </div>
+        </div>
+        {linked.length ? (
+          <div className="connected-reconciliations">
+            {linked.map((run) => (
+              <div key={run.id}>
+                <span className={`reconciliation-state ${run.status}`}>
+                  {reconciliationStatusLabel(run.status)}
+                </span>
+                <div>
+                  <strong>{run.name}</strong>
+                  <small>
+                    {run.leftName} vs {run.rightName}
+                  </small>
+                </div>
+                <button onClick={() => openReconciliation(run.id)}>
+                  Open <ArrowRight />
+                </button>
+                <button
+                  className="disconnect-reconciliation"
+                  onClick={() => connectReconciliation(run.id)}
+                >
+                  Disconnect
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-small close-empty">
+            No reconciliations connected yet. Select one above to make the close
+            requirements explicit.
+          </div>
+        )}
       </section>
       <section className="close-grid">
         <div className="panel">
@@ -2167,12 +2284,15 @@ function Wizard(props: {
   left?: UploadState;
   right?: UploadState;
   runName: string;
+  periods: ClosePeriod[];
+  closePeriodId: string;
   error: string;
   notice: string;
   saving: boolean;
   leftRef: React.RefObject<HTMLInputElement | null>;
   rightRef: React.RefObject<HTMLInputElement | null>;
   setRunName: (v: string) => void;
+  setClosePeriod: (v: string) => void;
   chooseFile: (f: File | undefined, s: "left" | "right") => void;
   setMapping: (s: "left" | "right", f: keyof ColumnMapping, v: string) => void;
   next: () => void;
@@ -2209,6 +2329,20 @@ function Wizard(props: {
                 onChange={(e) => props.setRunName(e.target.value)}
                 placeholder="August bank reconciliation"
               />
+            </label>
+            <label className="run-name">
+              Use in close
+              <select
+                value={props.closePeriodId}
+                onChange={(event) => props.setClosePeriod(event.target.value)}
+              >
+                <option value="">Not connected to a close</option>
+                {props.periods.map((period) => (
+                  <option key={period.id} value={period.id}>
+                    {period.name} · {period.periodEnd}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="upload-grid">
               <UploadBox

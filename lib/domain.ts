@@ -1,4 +1,9 @@
-export type CanonicalField = "id" | "date" | "description" | "amount" | "currency";
+export type CanonicalField =
+  | "id"
+  | "date"
+  | "description"
+  | "amount"
+  | "currency";
 
 export type ColumnMapping = Record<CanonicalField, string>;
 
@@ -25,7 +30,20 @@ export type Match = {
   reason: string;
   evidence: string[];
   groupedRight?: Transaction[];
-  exceptionType?: "timing" | "fee" | "refund" | "chargeback" | "duplicate" | "missing_ledger" | "missing_source" | "amount" | "currency" | "deposit_transit" | "outstanding" | "journal" | "other";
+  exceptionType?:
+    | "timing"
+    | "fee"
+    | "refund"
+    | "chargeback"
+    | "duplicate"
+    | "missing_ledger"
+    | "missing_source"
+    | "amount"
+    | "currency"
+    | "deposit_transit"
+    | "outstanding"
+    | "journal"
+    | "other";
   explanation?: string;
   owner?: string;
   dueDate?: string;
@@ -34,8 +52,18 @@ export type Match = {
   supportUrl?: string;
 };
 
-export type ReconciliationRules = { dateTolerance: number; amountTolerance: number; autoApprove: number; allowGrouping: boolean };
-export type Certification = { preparedBy?: string; preparedAt?: string; reviewedBy?: string; reviewedAt?: string };
+export type ReconciliationRules = {
+  dateTolerance: number;
+  amountTolerance: number;
+  autoApprove: number;
+  allowGrouping: boolean;
+};
+export type Certification = {
+  preparedBy?: string;
+  preparedAt?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+};
 
 export type MappingTemplate = {
   id: string;
@@ -58,6 +86,7 @@ export type ReconciliationRun = {
   updatedAt: string;
   matches: Match[];
   periodEnd?: string;
+  closePeriodId?: string;
   method: "transaction" | "balance" | "account_analysis" | "variance";
   status: "draft" | "review" | "changes_requested" | "certified";
   materiality: number;
@@ -69,9 +98,53 @@ export type ReconciliationRun = {
   priorReconciliationId?: string;
 };
 
-export type MatchingRule = { id:string; name:string; settings:ReconciliationRules; createdAt:string };
-export type CloseTask = { id:string; name:string; area:string; owner:string; reviewer:string; dueOffset:number; dueDate:string; status:"todo"|"doing"|"blocked"|"done"; dependencyId?:string; notes:string; reconciliationId?:string; completedAt?:string };
-export type VarianceItem = { id:string; account:string; current:number; prior:number; difference:number; percent:number; explanation:string; status:"open"|"reviewed" };
-export type ClosePeriod = { id:string; name:string; periodType:"month"|"quarter"|"year"; periodEnd:string; status:"open"|"closed"; materiality:number; tasks:CloseTask[]; variances:VarianceItem[]; closedAt?:string; createdAt:string };
+export type MatchingRule = {
+  id: string;
+  name: string;
+  settings: ReconciliationRules;
+  createdAt: string;
+};
+export type CloseTask = {
+  id: string;
+  name: string;
+  area: string;
+  owner: string;
+  reviewer: string;
+  dueOffset: number;
+  dueDate: string;
+  status: "todo" | "doing" | "blocked" | "done";
+  dependencyId?: string;
+  notes: string;
+  reconciliationId?: string;
+  completedAt?: string;
+};
+export type VarianceItem = {
+  id: string;
+  account: string;
+  current: number;
+  prior: number;
+  difference: number;
+  percent: number;
+  explanation: string;
+  status: "open" | "reviewed";
+};
+export type ClosePeriod = {
+  id: string;
+  name: string;
+  periodType: "month" | "quarter" | "year";
+  periodEnd: string;
+  status: "open" | "closed";
+  materiality: number;
+  tasks: CloseTask[];
+  variances: VarianceItem[];
+  closedAt?: string;
+  createdAt: string;
+};
 
-export type SafeUser = { id: string; name: string; email: string; organizationId: string; organizationName: string };
+export type SafeUser = {
+  id: string;
+  name: string;
+  email: string;
+  organizationId: string;
+  organizationName: string;
+};
