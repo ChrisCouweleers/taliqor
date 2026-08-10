@@ -47,12 +47,16 @@ import {
 } from "@/lib/domain";
 import {
   csvEscape,
-  CsvPreview,
   inferMapping,
   mappingFingerprint,
   normalizeRows,
-  parseCsvPreview,
 } from "@/lib/csv";
+import {
+  parseSpreadsheetFile,
+  spreadsheetAccept,
+  SpreadsheetPreview,
+  spreadsheetSourceName,
+} from "@/lib/spreadsheet";
 import { reconcile } from "@/lib/reconcile";
 import { createClient } from "@/lib/supabase/client";
 
@@ -64,7 +68,11 @@ type UserInfo = {
   organizationName: string;
   role: "owner" | "member";
 };
-type UploadState = { file: File; preview: CsvPreview; mapping: ColumnMapping };
+type UploadState = {
+  file: File;
+  preview: SpreadsheetPreview;
+  mapping: ColumnMapping;
+};
 type View =
   | "overview"
   | "reconciliation"
@@ -276,7 +284,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     try {
       if (file.size > 15 * 1024 * 1024)
         throw new Error("Files must be smaller than 15 MB.");
-      const preview = parseCsvPreview(await file.text()),
+      const preview = await parseSpreadsheetFile(file),
         fingerprint = mappingFingerprint(preview.headers);
       const saved = templates.find(
         (template) => template.fingerprint === fingerprint,
@@ -298,8 +306,30 @@ export function Dashboard({ user }: { user: UserInfo }) {
       );
     }
   }
+  async function chooseSheet(side: "left" | "right", sheetName: string) {
+    const current = side === "left" ? left : right;
+    if (!current) return;
+    try {
+      const preview = await parseSpreadsheetFile(current.file, sheetName);
+      const saved = templates.find(
+        (template) => template.fingerprint === mappingFingerprint(preview.headers),
+      );
+      const next = {
+        ...current,
+        preview,
+        mapping: saved?.mapping || inferMapping(preview),
+      };
+      side === "left" ? setLeft(next) : setRight(next);
+      setError("");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "We couldn't read that worksheet.",
+      );
+    }
+  }
   function beginMapping() {
-    if (!left || !right) return setError("Choose two CSV files to continue.");
+    if (!left || !right)
+      return setError("Choose two CSV or Excel files to continue.");
     if (!left.mapping.amount || !right.mapping.amount)
       setNotice("We need your help identifying the amount columns.");
     setWizardStep(2);
@@ -314,12 +344,12 @@ export function Dashboard({ user }: { user: UserInfo }) {
       const leftRows = normalizeRows(
           left.preview,
           left.mapping,
-          left.file.name,
+          spreadsheetSourceName(left.preview, left.file.name),
         ),
         rightRows = normalizeRows(
           right.preview,
           right.mapping,
-          right.file.name,
+          spreadsheetSourceName(right.preview, right.file.name),
         );
       const rules: ReconciliationRules = matchingRules[0]?.settings || {
         dateTolerance: 3,
@@ -327,9 +357,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
         autoApprove: 90,
         allowGrouping: true,
       };
+      const leftSourceName = spreadsheetSourceName(left.preview, left.file.name);
+      const rightSourceName = spreadsheetSourceName(right.preview, right.file.name);
       const previous = runs.find(
         (run) =>
-          run.leftName === left.file.name && run.rightName === right.file.name,
+          run.leftName === leftSourceName && run.rightName === rightSourceName,
       );
       const carried = (previous?.matches || [])
         .filter(
@@ -361,8 +393,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: runName || "New reconciliation",
-          leftName: left.file.name,
-          rightName: right.file.name,
+          leftName: leftSourceName,
+          rightName: rightSourceName,
           matches,
           templates: templatePayload,
           periodEnd: runOptions.periodEnd,
@@ -974,6 +1006,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
               setRunName(`${profile.name} reconciliation`);
           }}
           chooseFile={chooseFile}
+          chooseSheet={chooseSheet}
           setMapping={(side, field, value) =>
             side === "left"
               ? setLeft(
@@ -1079,7 +1112,7 @@ function Empty({ onStart }: { onStart: () => void }) {
       </p>
       <button className="primary" onClick={onStart}>
         <UploadSimple />
-        Upload two CSV files
+        Upload two spreadsheet files
       </button>
       <div>
         <i>
@@ -1960,7 +1993,7 @@ function AccountDeletionPanel({ user }: { user: UserInfo }) {
         <h2>Delete account</h2>
         <p>
           Permanently remove your Taliqor login and personal profile. If this is
-          your private workspace, its reconciliations, closes, and archived CSVs
+          your private workspace, its reconciliations, closes, and archived source files
           are removed too. Shared company work stays with the team.
         </p>
       </div>
@@ -2429,7 +2462,12 @@ function CloseHub({
       "month",
     ),
     [materiality, setMateriality] = useState(0),
-    [reconciliationToConnect, setReconciliationToConnect] = useState("");
+    [reconciliationToConnect, setReconciliationToConnect] = useState(""),
+    [varianceUpload, setVarianceUpload] = useState<{
+      file: File;
+      preview: SpreadsheetPreview;
+    }>(),
+    [varianceError, setVarianceError] = useState("");
   const selected = periods.find((period) => period.id === selectedCloseId);
   async function create() {
     const tasks = makeTasks(periodEnd, periodType, user.name),
@@ -2502,33 +2540,41 @@ function CloseHub({
       })),
     });
   }
-  async function importVariance(file?: File) {
+  async function importVariance(file?: File, sheetName?: string) {
     if (!file || !selected) return;
-    const preview = parseCsvPreview(await file.text()),
-      account =
-        preview.headers.find((h) => /account|name/i.test(h)) ||
-        preview.headers[0],
-      current =
-        preview.headers.find((h) => /current/i.test(h)) || preview.headers[1],
-      prior =
-        preview.headers.find((h) => /prior|previous/i.test(h)) ||
-        preview.headers[2];
-    const variances: VarianceItem[] = preview.rows.map((row, index) => {
-      const now = Number(String(row[current] || 0).replace(/[$,]/g, "")),
-        before = Number(String(row[prior] || 0).replace(/[$,]/g, "")),
-        difference = now - before;
-      return {
-        id: `v-${index}`,
-        account: row[account],
-        current: now,
-        prior: before,
-        difference,
-        percent: before ? (difference / Math.abs(before)) * 100 : 100,
-        explanation: "",
-        status: "open",
-      };
-    });
-    save({ variances });
+    try {
+      const preview = await parseSpreadsheetFile(file, sheetName);
+      setVarianceUpload({ file, preview });
+      const account =
+          preview.headers.find((h) => /account|name/i.test(h)) ||
+          preview.headers[0],
+        current =
+          preview.headers.find((h) => /current/i.test(h)) || preview.headers[1],
+        prior =
+          preview.headers.find((h) => /prior|previous/i.test(h)) ||
+          preview.headers[2];
+      const variances: VarianceItem[] = preview.rows.map((row, index) => {
+        const now = Number(String(row[current] || 0).replace(/[$,]/g, "")),
+          before = Number(String(row[prior] || 0).replace(/[$,]/g, "")),
+          difference = now - before;
+        return {
+          id: `v-${index}`,
+          account: row[account],
+          current: now,
+          prior: before,
+          difference,
+          percent: before ? (difference / Math.abs(before)) * 100 : 100,
+          explanation: "",
+          status: "open",
+        };
+      });
+      setVarianceError("");
+      save({ variances });
+    } catch (error) {
+      setVarianceError(
+        error instanceof Error ? error.message : "We couldn't read that spreadsheet.",
+      );
+    }
   }
   if (creating)
     return (
@@ -2880,27 +2926,45 @@ function CloseHub({
             </div>
             <div className="variance-actions">
               <label className="upload-mini">
-                {selected.variances.length ? "Replace CSV" : "Import CSV"}
+                {selected.variances.length ? "Replace file" : "Import file"}
                 <input
                   hidden
                   type="file"
-                  accept=".csv"
+                  accept={spreadsheetAccept}
                   onChange={async (e) => {
                     await importVariance(e.target.files?.[0]);
                     e.target.value = "";
                   }}
                 />
               </label>
+              {varianceUpload && varianceUpload.preview.sheetNames.length > 1 && (
+                <select
+                  aria-label="Variance worksheet"
+                  value={varianceUpload.preview.sheetName}
+                  onChange={(event) =>
+                    importVariance(varianceUpload.file, event.target.value)
+                  }
+                >
+                  {varianceUpload.preview.sheetNames.map((sheet) => (
+                    <option key={sheet} value={sheet}>{sheet}</option>
+                  ))}
+                </select>
+              )}
               {selected.variances.length > 0 && (
                 <button
                   className="clear-variance"
-                  onClick={() => save({ variances: [] })}
+                  onClick={() => {
+                    setVarianceUpload(undefined);
+                    setVarianceError("");
+                    save({ variances: [] });
+                  }}
                 >
                   Clear import
                 </button>
               )}
             </div>
           </div>
+          {varianceError && <p className="error">{varianceError}</p>}
           {selected.variances.length ? (
             selected.variances.map((variance) => (
               <div className="variance-row" key={variance.id}>
@@ -2942,7 +3006,7 @@ function CloseHub({
             ))
           ) : (
             <div className="empty-small">
-              Import a trial-balance CSV to review period-over-period changes.
+              Import a trial-balance CSV or Excel worksheet to review period-over-period changes.
             </div>
           )}
         </div>
@@ -2969,6 +3033,7 @@ function Wizard(props: {
   setClosePeriod: (v: string) => void;
   setProfile: (v: string) => void;
   chooseFile: (f: File | undefined, s: "left" | "right") => void;
+  chooseSheet: (s: "left" | "right", sheetName: string) => void;
   setMapping: (s: "left" | "right", f: keyof ColumnMapping, v: string) => void;
   next: () => void;
   run: () => void;
@@ -2994,7 +3059,7 @@ function Wizard(props: {
             </span>
             <h2>Choose your two sources</h2>
             <p>
-              Upload CSV exports from the systems you want to compare. We’ll
+              Upload CSV or Excel exports from the systems you want to compare. We’ll
               inspect them locally before anything is saved.
             </p>
             <label className="run-name">
@@ -3042,27 +3107,29 @@ function Wizard(props: {
             <div className="upload-grid">
               <UploadBox
                 label="Source file"
-                file={props.left?.file}
+                state={props.left}
                 onClick={() => props.leftRef.current?.click()}
+                onSheetChange={(sheet) => props.chooseSheet("left", sheet)}
               />
               <UploadBox
                 label="Comparison file"
-                file={props.right?.file}
+                state={props.right}
                 onClick={() => props.rightRef.current?.click()}
+                onSheetChange={(sheet) => props.chooseSheet("right", sheet)}
               />
             </div>
             <input
               ref={props.leftRef}
               hidden
               type="file"
-              accept=".csv,text/csv"
+              accept={spreadsheetAccept}
               onChange={(e) => props.chooseFile(e.target.files?.[0], "left")}
             />
             <input
               ref={props.rightRef}
               hidden
               type="file"
-              accept=".csv,text/csv"
+              accept={spreadsheetAccept}
               onChange={(e) => props.chooseFile(e.target.files?.[0], "right")}
             />
             <button className="primary run" onClick={props.next}>
@@ -3082,13 +3149,13 @@ function Wizard(props: {
             </p>
             <div className="mapping-grid">
               <Mapping
-                title={props.left.file.name}
+                title={spreadsheetSourceName(props.left.preview, props.left.file.name)}
                 state={props.left}
                 side="left"
                 change={props.setMapping}
               />
               <Mapping
-                title={props.right.file.name}
+                title={spreadsheetSourceName(props.right.preview, props.right.file.name)}
                 state={props.right}
                 side="right"
                 change={props.setMapping}
@@ -3184,28 +3251,43 @@ function Mapping({
 }
 function UploadBox({
   label,
-  file,
+  state,
   onClick,
+  onSheetChange,
 }: {
   label: string;
-  file?: File;
+  state?: UploadState;
   onClick: () => void;
+  onSheetChange: (sheet: string) => void;
 }) {
+  const file = state?.file;
   return (
-    <button
-      className={file ? "upload-box selected" : "upload-box"}
-      onClick={onClick}
-    >
-      <span>
-        <FileCsv weight="duotone" />
-      </span>
-      <strong>{file?.name || label}</strong>
-      <small>
-        {file
-          ? `${Math.ceil(file.size / 1024)} KB · Ready`
-          : "Choose a CSV file"}
-      </small>
-    </button>
+    <div className={file ? "upload-box-wrap selected" : "upload-box-wrap"}>
+      <button className={file ? "upload-box selected" : "upload-box"} onClick={onClick}>
+        <span>
+          <FileCsv weight="duotone" />
+        </span>
+        <strong>{file?.name || label}</strong>
+        <small>
+          {file
+            ? `${Math.ceil(file.size / 1024)} KB · Ready`
+            : "Choose a CSV, XLSX, or XLS file"}
+        </small>
+      </button>
+      {state && state.preview.sheetNames.length > 1 && (
+        <label>
+          Worksheet
+          <select
+            value={state.preview.sheetName}
+            onChange={(event) => onSheetChange(event.target.value)}
+          >
+            {state.preview.sheetNames.map((sheet) => (
+              <option key={sheet} value={sheet}>{sheet}</option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
   );
 }
 function initials(name: string) {

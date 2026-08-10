@@ -284,7 +284,7 @@ export function Homepage() {
                 <h3>Connect every source</h3>
                 <p>
                   Bring processors, banks, and ledgers into one reliable data
-                  layer. CSV works too.
+                  layer. CSV and Excel files work today.
                 </p>
               </div>
               <div className="connect-visual">
@@ -406,7 +406,7 @@ export function Homepage() {
               <div className="security-points">
                 <span>
                   <Check />
-                  Private CSV storage
+                  Private source-file storage
                 </span>
                 <span>
                   <Check />

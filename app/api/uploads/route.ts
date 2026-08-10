@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeRateLimit, isUuid, requestBodyTooLarge } from "@/lib/security";
+import { parseSpreadsheetBuffer } from "@/lib/spreadsheet";
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_FILE_BYTES * 2 + 1024 * 1024;
@@ -37,6 +38,38 @@ function validateCsv(file: File, text: string) {
   return null;
 }
 
+async function validateSpreadsheet(file: File) {
+  const extension = file.name.toLowerCase().split(".").pop();
+  if (extension === "xlsm") return "Macro-enabled .xlsm workbooks are not supported.";
+  if (!extension || !["csv", "xlsx", "xls"].includes(extension))
+    return "Choose CSV, XLSX, or XLS files.";
+  if (!file.size) return "Spreadsheet files cannot be empty.";
+  if (extension === "csv") return validateCsv(file, await file.text());
+  const buffer = await file.arrayBuffer();
+  const signature = new Uint8Array(buffer.slice(0, 8));
+  const isXlsx =
+    signature[0] === 0x50 && signature[1] === 0x4b && signature[2] === 0x03;
+  const isXls = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1].every(
+    (byte, index) => signature[index] === byte,
+  );
+  if ((extension === "xlsx" && !isXlsx) || (extension === "xls" && !isXls))
+    return "This file's contents do not match its Excel extension.";
+  try {
+    parseSpreadsheetBuffer(buffer, file.name);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "We couldn't read this workbook.";
+  }
+}
+
+function contentTypeFor(fileName: string) {
+  const extension = fileName.toLowerCase().split(".").pop();
+  if (extension === "xlsx")
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (extension === "xls") return "application/vnd.ms-excel";
+  return "text/csv";
+}
+
 export async function POST(request: Request) {
   if (requestBodyTooLarge(request, MAX_REQUEST_BYTES))
     return NextResponse.json({ error: "The upload is too large." }, { status: 413 });
@@ -67,13 +100,12 @@ export async function POST(request: Request) {
   const paths: string[] = [];
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) return NextResponse.json({ error: "Each file must be smaller than 15 MB." }, { status: 413 });
-    const text = await file.text();
-    const validationError = validateCsv(file, text);
+    const validationError = await validateSpreadsheet(file);
     if (validationError)
       return NextResponse.json({ error: validationError }, { status: 400 });
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
     const path = `${membership.organization_id}/${runId}/${crypto.randomUUID()}-${safeName}`;
-    const { error } = await supabase.storage.from("reconciliation-files").upload(path, file, { contentType: "text/csv", upsert: false });
+    const { error } = await supabase.storage.from("reconciliation-files").upload(path, file, { contentType: contentTypeFor(file.name), upsert: false });
     if (error) {
       if (paths.length) await supabase.storage.from("reconciliation-files").remove(paths);
       return NextResponse.json({ error: "The files could not be securely archived." }, { status: 400 });

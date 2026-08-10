@@ -580,6 +580,16 @@
   align-items: center;
   gap: 7px;
 }
+.variance-actions select {
+  max-width: 160px;
+  height: 34px;
+  border: 1px solid #d8e0e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #24344b;
+  padding: 0 8px;
+  font-size: 12px;
+}
 .variance-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -765,6 +775,11 @@
   background: #23534d;
   color: #c0fff5;
   border-color: #65ad9f;
+}
+[data-theme="dark"] .variance-actions select {
+  background: #1a2b42;
+  color: #eaf0f8;
+  border-color: #3b536d;
 }
 [data-theme="dark"] .certification button,
 [data-theme="dark"] .close-head button,
