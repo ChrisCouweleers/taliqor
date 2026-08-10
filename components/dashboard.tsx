@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowRight,
   ArrowUp,
   Bell,
@@ -20,6 +21,7 @@ import {
   MagnifyingGlass,
   Moon,
   Printer,
+  Question,
   Rows,
   SealCheck,
   SignOut,
@@ -40,6 +42,7 @@ import {
   MatchingRule,
   Match,
   ReconciliationRules,
+  ReconciliationProfile,
   ReconciliationRun,
   VarianceItem,
 } from "@/lib/domain";
@@ -67,6 +70,7 @@ type View =
   | "overview"
   | "reconciliation"
   | "history"
+  | "accounts"
   | "exceptions"
   | "close"
   | "settings";
@@ -85,11 +89,15 @@ const money = new Intl.NumberFormat("en-US", {
 
 export function Dashboard({ user }: { user: UserInfo }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [profileOpen, setProfileOpen] = useState(false);
   const [runs, setRuns] = useState<ReconciliationRun[]>([]),
     [templates, setTemplates] = useState<MappingTemplate[]>([]),
     [selectedId, setSelectedId] = useState("");
   const [closePeriods, setClosePeriods] = useState<ClosePeriod[]>([]),
-    [matchingRules, setMatchingRules] = useState<MatchingRule[]>([]);
+    [matchingRules, setMatchingRules] = useState<MatchingRule[]>([]),
+    [reconciliationProfiles, setReconciliationProfiles] = useState<
+      ReconciliationProfile[]
+    >([]);
   const [view, setView] = useState<View>("overview"),
     [loading, setLoading] = useState(true),
     [wizard, setWizard] = useState(false),
@@ -101,6 +109,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     method: "transaction" as ReconciliationRun["method"],
     periodEnd: new Date().toISOString().slice(0, 10),
     closePeriodId: "",
+    profileId: "",
     materiality: 0,
     sourceBalance: "",
     comparisonBalance: "",
@@ -132,17 +141,20 @@ export function Dashboard({ user }: { user: UserInfo }) {
   }
   async function loadRuns() {
     try {
-      const [response, closeResponse] = await Promise.all([
+      const [response, closeResponse, profileResponse] = await Promise.all([
         fetch("/api/reconciliations"),
         fetch("/api/close-periods"),
+        fetch("/api/reconciliation-profiles"),
       ]);
       const data = await response.json(),
-        closeData = await closeResponse.json();
+        closeData = await closeResponse.json(),
+        profileData = await profileResponse.json();
       if (!response.ok) throw new Error(data.error);
       setRuns(data.runs);
       setTemplates(data.templates);
       setMatchingRules(data.rules || []);
       setClosePeriods(closeData.periods || []);
+      setReconciliationProfiles(profileData.profiles || []);
       setSelectedId((current) => current || data.runs[0]?.id || "");
     } catch (caught) {
       setError(
@@ -313,6 +325,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           templates: templatePayload,
           periodEnd: runOptions.periodEnd,
           closePeriodId: runOptions.closePeriodId || undefined,
+          profileId: runOptions.profileId || undefined,
           method: runOptions.method,
           materiality: runOptions.materiality,
           sourceBalance:
@@ -363,6 +376,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
       method: "transaction",
       periodEnd: new Date().toISOString().slice(0, 10),
       closePeriodId: "",
+      profileId: "",
       materiality: 0,
       sourceBalance: "",
       comparisonBalance: "",
@@ -521,6 +535,13 @@ export function Dashboard({ user }: { user: UserInfo }) {
             Reconciliations
           </Nav>
           <Nav
+            active={view === "accounts"}
+            icon={<FileCsv />}
+            onClick={() => setView("accounts")}
+          >
+            Reconciliation plan
+          </Nav>
+          <Nav
             active={view === "exceptions"}
             icon={<Warning />}
             onClick={() => setView("exceptions")}
@@ -534,13 +555,6 @@ export function Dashboard({ user }: { user: UserInfo }) {
           >
             Close Hub
           </Nav>
-          <Nav
-            active={view === "settings"}
-            icon={<Gear />}
-            onClick={() => setView("settings")}
-          >
-            Settings
-          </Nav>
         </nav>
         <div className="side-bottom">
           <button
@@ -550,19 +564,42 @@ export function Dashboard({ user }: { user: UserInfo }) {
           >
             {theme === "light" ? <Moon weight="fill" /> : <Sun weight="fill" />}
             {theme === "light" ? "Dark mode" : "Light mode"}
+            <span className={`theme-switch ${theme}`} aria-hidden="true">
+              <i />
+            </span>
           </button>
-          <button onClick={signOut}>
-            <SignOut />
-            Sign out
-          </button>
-          <div className="profile">
+          {profileOpen && (
+            <div className="profile-menu" role="menu">
+              <button
+                role="menuitem"
+                className={view === "settings" ? "active" : ""}
+                onClick={() => {
+                  setView("settings");
+                  setProfileOpen(false);
+                }}
+              >
+                <Gear />
+                Settings
+              </button>
+              <button role="menuitem" onClick={signOut}>
+                <SignOut />
+                Sign out
+              </button>
+            </div>
+          )}
+          <button
+            className="profile"
+            onClick={() => setProfileOpen((open) => !open)}
+            aria-expanded={profileOpen}
+            aria-haspopup="menu"
+          >
             <span>{initials(user.name)}</span>
             <div>
               <strong>{user.name}</strong>
               <small>{user.email}</small>
             </div>
-            <CaretDown />
-          </div>
+            <CaretDown className={profileOpen ? "open" : ""} />
+          </button>
         </div>
       </aside>
       <main>
@@ -574,13 +611,15 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 ? "Exception review"
                 : view === "history"
                   ? "Reconciliation history"
-                  : view === "reconciliation"
-                    ? selected?.name || "Reconciliation"
-                    : view === "close"
-                      ? "Financial close"
-                      : view === "settings"
-                        ? "Workspace settings"
-                        : `Good ${greeting()}, ${user.name.split(" ")[0]}`}
+                  : view === "accounts"
+                    ? "Reconciliation plan"
+                    : view === "reconciliation"
+                      ? selected?.name || "Reconciliation"
+                      : view === "close"
+                        ? "Financial close"
+                        : view === "settings"
+                          ? "Workspace settings"
+                          : `Good ${greeting()}, ${user.name.split(" ")[0]}`}
             </h1>
             <p>
               {view === "overview"
@@ -591,9 +630,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
                     ? "Explain, assign, and resolve every difference."
                     : view === "history"
                       ? "Every run, decision, and result in one place."
-                      : view === "close"
-                        ? "Run a controlled month-end, quarter-end, or year-end close."
-                        : "Your free Taliqor workspace."}
+                      : view === "accounts"
+                        ? "Define the recurring accounts, owners, reviewers, and controls behind each period."
+                        : view === "close"
+                          ? "Run a controlled month-end, quarter-end, or year-end close."
+                          : "Your free Taliqor workspace."}
             </p>
           </div>
           <div className="header-actions">
@@ -647,6 +688,22 @@ export function Dashboard({ user }: { user: UserInfo }) {
             select={(id) => {
               setSelectedId(id);
               setView("reconciliation");
+            }}
+          />
+        ) : view === "accounts" ? (
+          <AccountPlan
+            profiles={reconciliationProfiles}
+            setProfiles={setReconciliationProfiles}
+            runs={runs}
+            start={(profile) => {
+              setRunName(`${profile.name} reconciliation`);
+              setRunOptions((current) => ({
+                ...current,
+                profileId: profile.id,
+                method: profile.method,
+                materiality: profile.materiality,
+              }));
+              setWizard(true);
             }}
           />
         ) : view === "overview" ? (
@@ -707,22 +764,26 @@ export function Dashboard({ user }: { user: UserInfo }) {
             <section className="metrics">
               <Metric
                 label="Revenue processed"
+                help="Total value of source transactions included in this reconciliation."
                 value={money.format(total)}
                 trend={`${allMatches.length} source rows`}
               />
               <Metric
                 label="Reconciliation rate"
+                help="Share of results that are matched or have been resolved."
                 value={`${rate}%`}
                 trend={`${matched} resolved`}
               />
               <Metric
                 label="Needs attention"
+                help="Unmatched or review items that still need a decision or explanation."
                 value={String(exceptions)}
                 trend="open exceptions"
                 warn
               />
               <Metric
                 label="Aged 30+ days"
+                help="Open items dated more than 30 days ago that may need escalation."
                 value={String(
                   allMatches.filter(
                     (item) =>
@@ -744,6 +805,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
                       ? "Open exceptions"
                       : "Reconciliation results"}
                   </h2>
+                  <InfoTip text="Each row shows how a source transaction matched, the evidence behind the match, and any action still required." />
                   <p>
                     {view === "exceptions"
                       ? "Classify differences and document their resolution."
@@ -783,6 +845,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
           runName={runName}
           periods={closePeriods}
           closePeriodId={runOptions.closePeriodId}
+          profiles={reconciliationProfiles}
+          profileId={runOptions.profileId}
           error={error}
           notice={notice}
           saving={saving}
@@ -798,6 +862,19 @@ export function Dashboard({ user }: { user: UserInfo }) {
               closePeriodId,
               periodEnd: period?.periodEnd || current.periodEnd,
             }));
+          }}
+          setProfile={(profileId) => {
+            const profile = reconciliationProfiles.find(
+              (item) => item.id === profileId,
+            );
+            setRunOptions((current) => ({
+              ...current,
+              profileId,
+              method: profile?.method || current.method,
+              materiality: profile?.materiality ?? current.materiality,
+            }));
+            if (profile && !runName)
+              setRunName(`${profile.name} reconciliation`);
           }}
           chooseFile={chooseFile}
           setMapping={(side, field, value) =>
@@ -849,16 +926,21 @@ function Metric({
   value,
   trend,
   warn,
+  help,
 }: {
   label: string;
   value: string;
   trend: string;
   warn?: boolean;
+  help?: string;
 }) {
   return (
     <div className="metric">
       <div className="metric-top">
-        <span>{label}</span>
+        <span>
+          {label}
+          {help && <InfoTip text={help} />}
+        </span>
         <span className={warn ? "metric-icon warning" : "metric-icon"}>
           {warn ? <Warning /> : <ChartLineUp />}
         </span>
@@ -869,6 +951,15 @@ function Metric({
         {trend}
       </p>
     </div>
+  );
+}
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="info-tip" tabIndex={0} aria-label={text}>
+      <Question weight="bold" />
+      <span role="tooltip">{text}</span>
+    </span>
   );
 }
 function Empty({ onStart }: { onStart: () => void }) {
@@ -958,22 +1049,26 @@ function WorkspaceOverview({
       <section className="metrics overview-metrics">
         <Metric
           label="Overall reconciliation rate"
+          help="Resolved results divided by all reconciliation results in the workspace."
           value={`${reconciliationRate}%`}
           trend={`${resolved} of ${allResults.length} results resolved`}
         />
         <Metric
           label="Open exceptions"
+          help="Differences across all reconciliations that still need attention."
           value={String(open)}
           trend="across all reconciliations"
           warn={open > 0}
         />
         <Metric
           label="Ready for review"
+          help="Reconciliations submitted by a preparer and waiting for reviewer approval."
           value={String(readyForReview)}
           trend={`${certified} certified · ${runs.length} total`}
         />
         <Metric
           label="Current close"
+          help="Progress on the active close, based on checklist completion and certified reconciliations."
           value={activeClose ? `${closePercent}%` : "—"}
           trend={activeClose?.name || "No close period started"}
         />
@@ -983,6 +1078,7 @@ function WorkspaceOverview({
           <div className="panel-title">
             <div>
               <h2>Recent reconciliations</h2>
+              <InfoTip text="Your latest reconciliation runs, their completion rate, workflow status, and connected close." />
               <p>Health and exceptions across your latest work.</p>
             </div>
           </div>
@@ -1021,6 +1117,7 @@ function WorkspaceOverview({
           <div className="panel-title">
             <div>
               <h2>Close readiness</h2>
+              <InfoTip text="A snapshot of checklist completion and variance review for the active close period." />
               <p>{activeClose?.name || "Start your first close period."}</p>
             </div>
           </div>
@@ -1298,6 +1395,254 @@ function History({
           );
         })
       )}
+    </section>
+  );
+}
+
+function AccountPlan({
+  profiles,
+  setProfiles,
+  runs,
+  start,
+}: {
+  profiles: ReconciliationProfile[];
+  setProfiles: (profiles: ReconciliationProfile[]) => void;
+  runs: ReconciliationRun[];
+  start: (profile: ReconciliationProfile) => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    accountNumber: "",
+    accountType: "cash",
+    method: "balance" as ReconciliationRun["method"],
+    frequency: "monthly" as ReconciliationProfile["frequency"],
+    risk: "medium" as ReconciliationProfile["risk"],
+    materiality: 0,
+    preparer: "",
+    reviewer: "",
+  });
+  const [error, setError] = useState("");
+
+  async function createProfile() {
+    if (!form.name.trim())
+      return setError("Enter an account or reconciliation name.");
+    const response = await fetch("/api/reconciliation-profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    const data = await response.json();
+    if (!response.ok)
+      return setError(data.error || "The plan could not be saved.");
+    setProfiles(
+      [...profiles, data.profile].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setCreating(false);
+    setError("");
+    setForm({ ...form, name: "", accountNumber: "" });
+  }
+
+  return (
+    <section className="account-plan">
+      <div className="account-plan-head">
+        <div>
+          <span>
+            RECURRING CONTROL{" "}
+            <InfoTip text="A reconciliation plan is the recurring list of accounts your team must substantiate each month, quarter, or year." />
+          </span>
+          <h2>Know what must be reconciled before the close begins.</h2>
+          <p>
+            Assign ownership and controls once, then reuse them every period.
+          </p>
+        </div>
+        <button className="primary" onClick={() => setCreating(!creating)}>
+          {creating ? "Cancel" : "Add account"}
+        </button>
+      </div>
+      {creating && (
+        <div className="panel account-plan-form">
+          <div className="panel-title">
+            <div>
+              <h2>Add an account</h2>
+              <p>
+                Keep this lightweight; details carry into each reconciliation.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label>
+              Account name
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Operating bank account"
+              />
+            </label>
+            <label>
+              Account number
+              <input
+                value={form.accountNumber}
+                onChange={(e) =>
+                  setForm({ ...form, accountNumber: e.target.value })
+                }
+                placeholder="1010"
+              />
+            </label>
+            <label>
+              Account type
+              <select
+                value={form.accountType}
+                onChange={(e) =>
+                  setForm({ ...form, accountType: e.target.value })
+                }
+              >
+                <option value="cash">Cash</option>
+                <option value="receivable">Receivable</option>
+                <option value="payable">Payable</option>
+                <option value="prepaid">Prepaid</option>
+                <option value="accrual">Accrual</option>
+                <option value="clearing">Clearing</option>
+                <option value="fixed_asset">Fixed asset</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Method
+              <select
+                value={form.method}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    method: e.target.value as ReconciliationRun["method"],
+                  })
+                }
+              >
+                <option value="transaction">Transaction matching</option>
+                <option value="balance">Balance comparison</option>
+                <option value="account_analysis">Account analysis</option>
+                <option value="variance">Variance analysis</option>
+              </select>
+            </label>
+            <label>
+              Frequency
+              <select
+                value={form.frequency}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    frequency: e.target
+                      .value as ReconciliationProfile["frequency"],
+                  })
+                }
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </label>
+            <label>
+              Risk
+              <select
+                value={form.risk}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    risk: e.target.value as ReconciliationProfile["risk"],
+                  })
+                }
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label>
+              Materiality threshold
+              <input
+                type="number"
+                min="0"
+                value={form.materiality}
+                onChange={(e) =>
+                  setForm({ ...form, materiality: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Preparer
+              <input
+                value={form.preparer}
+                onChange={(e) => setForm({ ...form, preparer: e.target.value })}
+                placeholder="Name or role"
+              />
+            </label>
+            <label>
+              Reviewer
+              <input
+                value={form.reviewer}
+                onChange={(e) => setForm({ ...form, reviewer: e.target.value })}
+                placeholder="Name or role"
+              />
+            </label>
+          </div>
+          {error && <p className="error">{error}</p>}
+          <button className="primary" onClick={createProfile}>
+            Save account
+          </button>
+        </div>
+      )}
+      <div className="account-plan-grid">
+        {profiles.map((profile) => {
+          const lastRun = runs.find((run) => run.profileId === profile.id);
+          return (
+            <article className="panel" key={profile.id}>
+              <div>
+                <span className={`risk ${profile.risk}`}>
+                  {profile.risk} risk
+                </span>
+                <small>{profile.frequency}</small>
+              </div>
+              <h3>{profile.name}</h3>
+              <p>
+                {profile.accountNumber || "No account number"} ·{" "}
+                {reconciliationMethodLabel(profile.method)}
+              </p>
+              <dl>
+                <div>
+                  <dt>Preparer</dt>
+                  <dd>{profile.preparer || "Unassigned"}</dd>
+                </div>
+                <div>
+                  <dt>Reviewer</dt>
+                  <dd>{profile.reviewer || "Unassigned"}</dd>
+                </div>
+                <div>
+                  <dt>Materiality</dt>
+                  <dd>{money.format(profile.materiality)}</dd>
+                </div>
+              </dl>
+              <div className="account-plan-status">
+                <span
+                  className={`reconciliation-state ${lastRun?.status || "draft"}`}
+                >
+                  {lastRun
+                    ? reconciliationStatusLabel(lastRun.status)
+                    : "Not started"}
+                </span>
+                <small>{lastRun?.periodEnd || "No prior period"}</small>
+              </div>
+              <button className="primary" onClick={() => start(profile)}>
+                Start reconciliation <ArrowRight />
+              </button>
+            </article>
+          );
+        })}
+        {!profiles.length && !creating && (
+          <div className="empty-small">
+            Add the first recurring account your team reconciles each period.
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -1631,6 +1976,7 @@ function ControlSummary({
         <h2>
           {ready ? "Balance is substantiated" : "Difference needs explanation"}
         </h2>
+        <InfoTip text="Control totals compare the two balances, subtract explained items, and show the amount that remains unsupported." />
         <p>
           {ready
             ? "The unexplained difference is within materiality."
@@ -1692,6 +2038,7 @@ function CertificationPanel({
         <SealCheck weight="duotone" />
         <span>
           <h2>Reconciliation certification</h2>
+          <InfoTip text="The preparer submits completed work for review; the reviewer approves and certifies the conclusion for the audit trail." />
           <p>
             Submit completed work for review, then certify the reviewer-approved
             conclusion and audit trail.
@@ -1838,7 +2185,7 @@ function CloseHub({
   user: UserInfo;
   openReconciliation: (id: string) => void;
 }) {
-  const [selectedId, setSelectedId] = useState(periods[0]?.id || ""),
+  const [selectedId, setSelectedId] = useState(""),
     [creating, setCreating] = useState(!periods.length),
     [name, setName] = useState(""),
     [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10)),
@@ -1847,8 +2194,7 @@ function CloseHub({
     ),
     [materiality, setMateriality] = useState(0),
     [reconciliationToConnect, setReconciliationToConnect] = useState("");
-  const selected =
-    periods.find((period) => period.id === selectedId) || periods[0];
+  const selected = periods.find((period) => period.id === selectedId);
   async function create() {
     const tasks = makeTasks(periodEnd, periodType, user.name),
       response = await fetch("/api/close-periods", {
@@ -1953,10 +2299,11 @@ function CloseHub({
       <section className="panel close-create">
         <CalendarCheck weight="duotone" />
         <h2>Start a controlled close</h2>
+        <InfoTip text="A close workspace combines the period checklist, connected reconciliations, variance explanations, and final approval." />
         <p>
           Generate a reusable checklist for month-end, quarter-end, or year-end.
         </p>
-        <div>
+        <div className="close-create-fields">
           <label>
             Close name
             <input
@@ -1987,23 +2334,109 @@ function CloseHub({
             />
           </label>
           <label>
-            Materiality
+            Materiality threshold
             <input
               type="number"
+              min="0"
+              step="1"
               value={materiality}
               onChange={(e) => setMateriality(Number(e.target.value))}
+              aria-describedby="materiality-help"
             />
+            <small id="materiality-help">
+              Dollar difference that requires attention. Example: $500 flags
+              variances over $500.
+            </small>
           </label>
         </div>
-        <button className="primary" onClick={create}>
-          Create close workspace
-        </button>
-        {periods.length > 0 && (
-          <button onClick={() => setCreating(false)}>Cancel</button>
-        )}
+        <div className="close-create-actions">
+          <button className="primary" onClick={create}>
+            Create close workspace
+            <ArrowRight />
+          </button>
+          {periods.length > 0 && (
+            <button onClick={() => setCreating(false)}>Cancel</button>
+          )}
+        </div>
       </section>
     );
-  if (!selected) return null;
+  if (!selected)
+    return (
+      <section className="close-library">
+        <div className="close-library-head">
+          <div>
+            <span>
+              ALL CLOSES{" "}
+              <InfoTip text="A close workspace organizes the tasks, reconciliations, variance reviews, and approvals needed to finish a financial period." />
+            </span>
+            <h2>Choose a close to continue</h2>
+            <p>
+              Open a period to review progress, complete work, or certify
+              reconciliations.
+            </p>
+          </div>
+          <button className="primary" onClick={() => setCreating(true)}>
+            New close <ArrowRight />
+          </button>
+        </div>
+        <div className="close-library-grid">
+          {periods.map((period) => {
+            const taskDone = period.tasks.filter(
+              (task) => task.status === "done",
+            ).length;
+            const connected = runs.filter(
+              (run) => run.closePeriodId === period.id,
+            );
+            const certifiedRuns = connected.filter(
+              (run) => run.status === "certified",
+            ).length;
+            const progress = Math.round(
+              (taskDone / Math.max(period.tasks.length, 1)) * 70 +
+                (connected.length
+                  ? (certifiedRuns / connected.length) * 30
+                  : 0),
+            );
+            return (
+              <button key={period.id} onClick={() => setSelectedId(period.id)}>
+                <div>
+                  <span className={`close-state ${period.status}`}>
+                    {period.status}
+                  </span>
+                  <small>
+                    {period.periodType}-end · {period.periodEnd}
+                  </small>
+                </div>
+                <h3>{period.name}</h3>
+                <div className="close-progress-track">
+                  <i style={{ width: `${progress}%` }} />
+                </div>
+                <dl>
+                  <div>
+                    <dt>Ready</dt>
+                    <dd>{progress}%</dd>
+                  </div>
+                  <div>
+                    <dt>Tasks</dt>
+                    <dd>
+                      {taskDone}/{period.tasks.length}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Certified</dt>
+                    <dd>
+                      {certifiedRuns}/{connected.length}
+                    </dd>
+                  </div>
+                </dl>
+                <span className="close-open">
+                  Open close <ArrowRight />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    );
   const done = selected.tasks.filter((task) => task.status === "done").length,
     linked = runs.filter((run) => run.closePeriodId === selected.id),
     available = runs.filter((run) => !run.closePeriodId),
@@ -2022,6 +2455,9 @@ function CloseHub({
   return (
     <>
       <section className="close-head">
+        <button className="close-back" onClick={() => setSelectedId("")}>
+          <ArrowLeft /> All closes
+        </button>
         <div>
           <select
             value={selected.id}
@@ -2054,22 +2490,26 @@ function CloseHub({
       <section className="metrics">
         <Metric
           label="Tasks complete"
+          help="Required close procedures marked complete by the team. Checklist completion supplies 70% of readiness."
           value={`${done}/${selected.tasks.length}`}
           trend={`${selected.tasks.length - done} remaining`}
         />
         <Metric
           label="Certified reconciliations"
+          help="Connected reconciliations approved by a reviewer. Certification supplies the final 30% of readiness."
           value={`${certified}/${linked.length}`}
           trend="for this period"
         />
         <Metric
           label="Material exceptions"
+          help="Open reconciliation differences larger than this close's materiality threshold."
           value={String(materialExceptions)}
           trend={`above ${money.format(selected.materiality)}`}
           warn
         />
         <Metric
           label="Variance reviews"
+          help="Period-over-period account changes that have a documented explanation."
           value={`${selected.variances.filter((v) => v.status === "reviewed").length}/${selected.variances.length}`}
           trend="reviewed"
         />
@@ -2078,6 +2518,7 @@ function CloseHub({
         <div className="panel-title">
           <div>
             <h2>Reconciliations for this close</h2>
+            <InfoTip text="Connect the account reconciliations that support this period. Every connected reconciliation must be certified to finish the close." />
             <p>
               Connected reconciliations contribute the final 30% of readiness
               when certified.
@@ -2144,6 +2585,7 @@ function CloseHub({
           <div className="panel-title">
             <div>
               <h2>Close checklist</h2>
+              <InfoTip text="The repeatable procedures your team completes before closing the period. These tasks account for 70% of close readiness." />
               <p>
                 Ownership, deadlines, dependencies, and evidence in one place.
               </p>
@@ -2204,6 +2646,7 @@ function CloseHub({
           <div className="panel-title">
             <div>
               <h2>Variance review</h2>
+              <InfoTip text="Compare current and prior balances, then explain significant changes so reviewers understand what moved and why." />
               <p>Upload account, current, and prior balances.</p>
             </div>
             <div className="variance-actions">
@@ -2286,6 +2729,8 @@ function Wizard(props: {
   runName: string;
   periods: ClosePeriod[];
   closePeriodId: string;
+  profiles: ReconciliationProfile[];
+  profileId: string;
   error: string;
   notice: string;
   saving: boolean;
@@ -2293,6 +2738,7 @@ function Wizard(props: {
   rightRef: React.RefObject<HTMLInputElement | null>;
   setRunName: (v: string) => void;
   setClosePeriod: (v: string) => void;
+  setProfile: (v: string) => void;
   chooseFile: (f: File | undefined, s: "left" | "right") => void;
   setMapping: (s: "left" | "right", f: keyof ColumnMapping, v: string) => void;
   next: () => void;
@@ -2329,6 +2775,21 @@ function Wizard(props: {
                 onChange={(e) => props.setRunName(e.target.value)}
                 placeholder="August bank reconciliation"
               />
+            </label>
+            <label className="run-name">
+              Reconciliation plan
+              <select
+                value={props.profileId}
+                onChange={(event) => props.setProfile(event.target.value)}
+              >
+                <option value="">One-time reconciliation</option>
+                {props.profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.accountNumber ? `${profile.accountNumber} · ` : ""}
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="run-name">
               Use in close
@@ -2529,6 +2990,15 @@ function reconciliationStatusLabel(status: ReconciliationRun["status"]) {
     changes_requested: "Changes requested",
     certified: "Certified",
   }[status];
+}
+
+function reconciliationMethodLabel(method: ReconciliationRun["method"]) {
+  return {
+    transaction: "Transaction matching",
+    balance: "Balance comparison",
+    account_analysis: "Account analysis",
+    variance: "Variance analysis",
+  }[method];
 }
 function greeting() {
   const hour = new Date().getHours();

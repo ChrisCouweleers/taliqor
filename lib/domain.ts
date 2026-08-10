@@ -87,6 +87,7 @@ export type ReconciliationRun = {
   matches: Match[];
   periodEnd?: string;
   closePeriodId?: string;
+  profileId?: string;
   method: "transaction" | "balance" | "account_analysis" | "variance";
   status: "draft" | "review" | "changes_requested" | "certified";
   materiality: number;
@@ -96,6 +97,21 @@ export type ReconciliationRun = {
   certification: Certification;
   rules: ReconciliationRules;
   priorReconciliationId?: string;
+};
+
+export type ReconciliationProfile = {
+  id: string;
+  name: string;
+  accountNumber?: string;
+  accountType: string;
+  method: ReconciliationRun["method"];
+  frequency: "monthly" | "quarterly" | "yearly";
+  risk: "low" | "medium" | "high";
+  materiality: number;
+  preparer: string;
+  reviewer: string;
+  active: boolean;
+  createdAt: string;
 };
 
 export type MatchingRule = {

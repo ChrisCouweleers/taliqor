@@ -11,6 +11,7 @@ const fromDatabase = (item: Record<string, any>) => ({
   matches: item.matches || [],
   periodEnd: item.period_end,
   closePeriodId: item.close_period_id,
+  profileId: item.profile_id,
   method: item.method || "transaction",
   status: item.status || "draft",
   materiality: Number(item.materiality || 0),
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
       matches: body.matches,
       period_end: body.periodEnd || null,
       close_period_id: body.closePeriodId || null,
+      profile_id: body.profileId || null,
       method: body.method || "transaction",
       materiality: body.materiality || 0,
       source_balance: body.sourceBalance,
@@ -106,16 +108,14 @@ export async function POST(request: Request) {
   if (error)
     return NextResponse.json({ error: error.message }, { status: 400 });
   for (const template of body.templates || [])
-    await supabase
-      .from("mapping_templates")
-      .upsert(
-        {
-          organization_id: membership.organization_id,
-          name: template.name,
-          fingerprint: template.fingerprint,
-          mapping: template.mapping,
-        },
-        { onConflict: "organization_id,fingerprint" },
-      );
+    await supabase.from("mapping_templates").upsert(
+      {
+        organization_id: membership.organization_id,
+        name: template.name,
+        fingerprint: template.fingerprint,
+        mapping: template.mapping,
+      },
+      { onConflict: "organization_id,fingerprint" },
+    );
   return NextResponse.json({ run: fromDatabase(data) });
 }

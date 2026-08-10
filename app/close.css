@@ -169,7 +169,7 @@
   font-size: 48px;
   color: #12a58f;
 }
-.close-create > div {
+.close-create-fields {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr;
   gap: 10px;
@@ -183,6 +183,12 @@
   font-size: 12px;
   font-weight: 700;
 }
+.close-create label small {
+  color: #7a8798;
+  font-weight: 500;
+  line-height: 1.4;
+  max-width: 190px;
+}
 .close-create input,
 .close-create select {
   height: 39px;
@@ -190,6 +196,23 @@
   border-radius: 6px;
   padding: 0 10px;
   background: white;
+}
+.close-create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.close-create-actions .primary {
+  min-width: 235px;
+  min-height: 46px;
+  justify-content: center;
+  font-size: 13px;
+}
+.close-create-actions > button:not(.primary) {
+  min-height: 46px;
+  padding-inline: 20px;
 }
 .close-head {
   background: #07162f;
@@ -201,8 +224,131 @@
   align-items: center;
   gap: 14px;
 }
-.close-head > div:first-child {
+.close-head > div:first-of-type {
   margin-right: auto;
+}
+.close-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #152a46 !important;
+  color: #dce7f5 !important;
+  border-color: #38516e !important;
+}
+.close-back:hover {
+  background: #234361 !important;
+  color: #fff !important;
+  border-color: #5b7a98 !important;
+}
+.close-library {
+  display: grid;
+  gap: 18px;
+}
+.close-library-head {
+  padding: 25px 27px;
+  border-radius: 13px;
+  background: #07162f;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.close-library-head > div > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #67daca;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.close-library-head h2 {
+  margin: 7px 0 4px;
+  font: 700 23px Manrope;
+}
+.close-library-head p {
+  color: #b5c2d3;
+}
+.close-library-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.close-library-grid > button {
+  min-height: 245px;
+  padding: 21px;
+  border: 1px solid #dce3e9;
+  border-radius: 11px;
+  background: #fff;
+  color: #142039;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+.close-library-grid > button:hover {
+  border-color: #70cbbb !important;
+  background: #f8fdfc !important;
+  box-shadow: 0 12px 28px #15374c16 !important;
+}
+.close-library-grid > button > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.close-state {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e6f7f3;
+  color: #087968;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+.close-state.closed {
+  background: #e8edf3;
+  color: #556477;
+}
+.close-library-grid h3 {
+  margin: 22px 0 17px;
+  font: 700 18px Manrope;
+}
+.close-progress-track {
+  height: 7px;
+  border-radius: 999px;
+  background: #e7edf1;
+  overflow: hidden;
+}
+.close-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #12ad98;
+}
+.close-library-grid dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+}
+.close-library-grid dl div {
+  display: grid;
+  gap: 3px;
+}
+.close-library-grid dt {
+  color: #7c899a;
+}
+.close-library-grid dd {
+  margin: 0;
+  font-weight: 800;
+}
+.close-open {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #087d6f;
+  font-weight: 800;
 }
 .close-head select {
   background: transparent;
@@ -458,7 +604,7 @@
   .control-summary dl {
     grid-template-columns: 1fr 1fr;
   }
-  .close-create > div {
+  .close-create-fields {
     grid-template-columns: 1fr 1fr;
   }
   .close-head {
@@ -483,6 +629,18 @@
   }
   .connected-reconciliations > div {
     grid-template-columns: 1fr 1fr;
+  }
+  .close-library-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 650px) {
+  .close-library-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .close-library-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -643,4 +801,13 @@
 }
 [data-theme="dark"] .connected-reconciliations small {
   color: #aab8ca;
+}
+[data-theme="dark"] .close-library-grid > button {
+  background: #132238;
+  color: #edf4fb;
+  border-color: #2d435b;
+}
+[data-theme="dark"] .close-library-grid > button:hover {
+  background: #172b42 !important;
+  border-color: #4f8b82 !important;
 }
