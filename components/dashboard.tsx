@@ -570,18 +570,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
             Overview
           </Nav>
           <Nav
-            active={view === "history"}
+            active={view === "history" || view === "accounts"}
             icon={<Rows />}
-            onClick={() => navigateDashboard("history")}
-          >
-            Reconciliations
-          </Nav>
-          <Nav
-            active={view === "accounts"}
-            icon={<FileCsv />}
             onClick={() => navigateDashboard("accounts")}
           >
-            Reconciliation plan
+            Reconciliations
           </Nav>
           <Nav
             active={view === "exceptions"}
@@ -654,9 +647,9 @@ export function Dashboard({ user }: { user: UserInfo }) {
               {view === "exceptions"
                 ? "Exception review"
                 : view === "history"
-                  ? "Reconciliation history"
+                  ? "Reconciliations"
                   : view === "accounts"
-                    ? "Reconciliation plan"
+                    ? "Reconciliations"
                     : view === "reconciliation"
                       ? selected?.name || "Reconciliation"
                       : view === "close"
@@ -730,6 +723,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           <History
             runs={runs}
             periods={closePeriods}
+            openPlan={() => navigateDashboard("accounts")}
             select={(id) => {
               navigateDashboard("reconciliation", { reconciliationId: id });
             }}
@@ -739,6 +733,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
             profiles={reconciliationProfiles}
             setProfiles={setReconciliationProfiles}
             runs={runs}
+            openHistory={() => navigateDashboard("history")}
             start={(profile) => {
               setRunName(`${profile.name} reconciliation`);
               setRunOptions((current) => ({
@@ -1396,58 +1391,63 @@ function Results({
 function History({
   runs,
   periods,
+  openPlan,
   select,
 }: {
   runs: ReconciliationRun[];
   periods: ClosePeriod[];
+  openPlan: () => void;
   select: (id: string) => void;
 }) {
   return (
-    <section className="history-list">
-      {!runs.length ? (
-        <Empty onStart={() => {}} />
-      ) : (
-        runs.map((run) => {
-          const resolved = run.matches.filter(
-            (m) => m.status === "matched" || m.decision === "approved",
-          ).length;
-          return (
-            <button key={run.id} onClick={() => select(run.id)}>
-              <span className="history-icon">
-                <ClockCounterClockwise />
-              </span>
-              <div>
-                <strong>{run.name}</strong>
-                <small>
-                  {run.leftName} vs {run.rightName} ·{" "}
-                  {new Date(run.createdAt).toLocaleString()}
-                </small>
-                {run.closePeriodId && (
-                  <span className="close-link-label">
-                    Used in{" "}
-                    {periods.find((period) => period.id === run.closePeriodId)
-                      ?.name || "close"}
-                  </span>
-                )}
-              </div>
-              <div className="history-stats">
-                <span className={`reconciliation-state ${run.status}`}>
-                  {reconciliationStatusLabel(run.status)}
+    <>
+      <ReconciliationTabs active="history" openPlan={openPlan} />
+      <section className="history-list">
+        {!runs.length ? (
+          <Empty onStart={() => {}} />
+        ) : (
+          runs.map((run) => {
+            const resolved = run.matches.filter(
+              (m) => m.status === "matched" || m.decision === "approved",
+            ).length;
+            return (
+              <button key={run.id} onClick={() => select(run.id)}>
+                <span className="history-icon">
+                  <ClockCounterClockwise />
                 </span>
-                <strong>
-                  {run.matches.length
-                    ? Math.round((resolved / run.matches.length) * 100)
-                    : 0}
-                  %
-                </strong>
-                <small>{run.matches.length} records</small>
-              </div>
-              <ArrowRight />
-            </button>
-          );
-        })
-      )}
-    </section>
+                <div>
+                  <strong>{run.name}</strong>
+                  <small>
+                    {run.leftName} vs {run.rightName} ·{" "}
+                    {new Date(run.createdAt).toLocaleString()}
+                  </small>
+                  {run.closePeriodId && (
+                    <span className="close-link-label">
+                      Used in{" "}
+                      {periods.find((period) => period.id === run.closePeriodId)
+                        ?.name || "close"}
+                    </span>
+                  )}
+                </div>
+                <div className="history-stats">
+                  <span className={`reconciliation-state ${run.status}`}>
+                    {reconciliationStatusLabel(run.status)}
+                  </span>
+                  <strong>
+                    {run.matches.length
+                      ? Math.round((resolved / run.matches.length) * 100)
+                      : 0}
+                    %
+                  </strong>
+                  <small>{run.matches.length} records</small>
+                </div>
+                <ArrowRight />
+              </button>
+            );
+          })
+        )}
+      </section>
+    </>
   );
 }
 
@@ -1455,11 +1455,13 @@ function AccountPlan({
   profiles,
   setProfiles,
   runs,
+  openHistory,
   start,
 }: {
   profiles: ReconciliationProfile[];
   setProfiles: (profiles: ReconciliationProfile[]) => void;
   runs: ReconciliationRun[];
+  openHistory: () => void;
   start: (profile: ReconciliationProfile) => void;
 }) {
   const [creating, setCreating] = useState(false);
@@ -1497,6 +1499,7 @@ function AccountPlan({
 
   return (
     <section className="account-plan">
+      <ReconciliationTabs active="plan" openHistory={openHistory} />
       <div className="account-plan-head">
         <div>
           <span>
@@ -1698,6 +1701,30 @@ function AccountPlan({
     </section>
   );
 }
+
+function ReconciliationTabs({
+  active,
+  openPlan,
+  openHistory,
+}: {
+  active: "plan" | "history";
+  openPlan?: () => void;
+  openHistory?: () => void;
+}) {
+  return (
+    <div className="reconciliation-tabs" aria-label="Reconciliation views">
+      <button className={active === "plan" ? "active" : ""} onClick={openPlan}>
+        Plan
+      </button>
+      <button
+        className={active === "history" ? "active" : ""}
+        onClick={openHistory}
+      >
+        History
+      </button>
+    </div>
+  );
+}
 function Settings({
   user,
   templates,
@@ -1835,7 +1862,103 @@ function Settings({
           </div>
         )}
       </div>
+      <AccountDeletionPanel user={user} />
     </section>
+  );
+}
+
+function AccountDeletionPanel({ user }: { user: UserInfo }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const confirmed =
+    email.trim().toLowerCase() === user.email.toLowerCase() &&
+    confirmation === "DELETE";
+
+  async function deleteAccount() {
+    if (!confirmed || busy) return;
+    setBusy(true);
+    setMessage("");
+    const response = await fetch("/api/account/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, confirmation }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.error || "Your account could not be deleted.");
+      setBusy(false);
+      return;
+    }
+    await createClient().auth.signOut({ scope: "local" });
+    location.assign("/");
+  }
+
+  return (
+    <div className="panel danger-zone">
+      <div>
+        <h2>Delete account</h2>
+        <p>
+          Permanently remove your Taliqor login and personal profile. If this is
+          your private workspace, its reconciliations, closes, and archived CSVs
+          are removed too. Shared company work stays with the team.
+        </p>
+      </div>
+      {!open ? (
+        <button className="danger-action" onClick={() => setOpen(true)}>
+          <Trash /> Delete my account
+        </button>
+      ) : (
+        <div className="delete-confirmation">
+          <div className="delete-warning">
+            <Warning weight="fill" />
+            <span>This cannot be undone.</span>
+          </div>
+          <label>
+            Confirm your email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder={user.email}
+              autoComplete="email"
+            />
+          </label>
+          <label>
+            Type DELETE
+            <input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+            />
+          </label>
+          {message && <div className="team-message danger-message">{message}</div>}
+          <div className="delete-actions">
+            <button
+              onClick={() => {
+                setOpen(false);
+                setEmail("");
+                setConfirmation("");
+                setMessage("");
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              className="danger-action"
+              onClick={deleteAccount}
+              disabled={!confirmed || busy}
+            >
+              <Trash /> {busy ? "Deleting…" : "Permanently delete account"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

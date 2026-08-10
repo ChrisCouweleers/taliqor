@@ -91,5 +91,10 @@ export function normalizeRows(preview: CsvPreview, mapping: ColumnMapping, sourc
 
 export function mappingFingerprint(headers: string[]) { return headers.map(normalize).sort().join("|"); }
 
-export function csvEscape(value: unknown) { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
-
+export function csvEscape(value: unknown) {
+  let text = String(value ?? "");
+  // Keep values supplied by uploaded files from becoming formulas when an
+  // exported report is opened in spreadsheet software.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}

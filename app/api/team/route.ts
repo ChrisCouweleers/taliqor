@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { consumeRateLimit, requestBodyTooLarge } from "@/lib/security";
 
 async function ownerContext() {
   const supabase = await createClient();
@@ -66,6 +67,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (requestBodyTooLarge(request, 16 * 1024))
+    return NextResponse.json({ error: "The request is too large." }, { status: 413 });
   const { supabase, user, membership } = await ownerContext();
   if (!user || !membership)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -74,11 +77,18 @@ export async function POST(request: Request) {
       { error: "Only the workspace owner can invite teammates." },
       { status: 403 },
     );
+  if (!(await consumeRateLimit(supabase, "invite")))
+    return NextResponse.json(
+      { error: "Too many invitations. Please wait before trying again." },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
 
   const body = await request.json();
   const email = String(body.email || "")
     .trim()
     .toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   const { data, error } = await supabase
     .from("team_invitations")
     .insert({

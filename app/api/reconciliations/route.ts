@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { consumeRateLimit, requestBodyTooLarge } from "@/lib/security";
 
 const fromDatabase = (item: Record<string, any>) => ({
   id: item.id,
@@ -67,12 +68,19 @@ export async function GET() {
   });
 }
 export async function POST(request: Request) {
+  if (requestBodyTooLarge(request, 8 * 1024 * 1024))
+    return NextResponse.json({ error: "The reconciliation is too large." }, { status: 413 });
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await consumeRateLimit(supabase, "create_reconciliation")))
+    return NextResponse.json(
+      { error: "Too many reconciliations were created. Please wait before trying again." },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
   const { data: membership } = await supabase
     .from("organization_members")
     .select("organization_id")
@@ -84,14 +92,21 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   const body = await request.json();
+  const name = String(body.name || "").trim();
+  const leftName = String(body.leftName || "").trim();
+  const rightName = String(body.rightName || "").trim();
+  if (!name || name.length > 120 || !leftName || leftName.length > 160 || !rightName || rightName.length > 160)
+    return NextResponse.json({ error: "Check the reconciliation and file names." }, { status: 400 });
+  if (!Array.isArray(body.matches) || body.matches.length > 100_000)
+    return NextResponse.json({ error: "The reconciliation contains too many rows." }, { status: 400 });
   const { data, error } = await supabase
     .from("reconciliations")
     .insert({
       organization_id: membership.organization_id,
       created_by: user.id,
-      name: body.name,
-      left_name: body.leftName,
-      right_name: body.rightName,
+      name,
+      left_name: leftName,
+      right_name: rightName,
       matches: body.matches,
       period_end: body.periodEnd || null,
       close_period_id: body.closePeriodId || null,
