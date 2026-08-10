@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const controls = [
-  { icon: LockKey, title: "Private storage", text: "Archived CSV and Excel source files are kept in a private bucket and are not published on the open web." },
+  { icon: LockKey, title: "Private storage", text: "Archived source files and supporting evidence are kept in private buckets and are not published on the open web." },
   { icon: ShieldCheck, title: "Organization isolation", text: "Database and file policies limit authenticated users to information belonging to their organization." },
   { icon: Key, title: "Verified login", text: "Every login requires a single-use six-digit code delivered to the account email address." },
   { icon: FileCsv, title: "Defensive uploads", text: "Taliqor validates CSV and Excel file types, signatures, size, structure, worksheet, row, column, and reconciliation ownership limits." },

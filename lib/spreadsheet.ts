@@ -145,3 +145,12 @@ export async function parseSpreadsheetFile(
 export function spreadsheetSourceName(preview: SpreadsheetPreview, fileName: string) {
   return preview.sheetName ? `${fileName} · ${preview.sheetName}` : fileName;
 }
+
+export function downloadXlsx(
+  fileName: string,
+  rows: Record<string, string | number>[],
+) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Journal Entry");
+  XLSX.writeFile(workbook, fileName, { compression: true });
+}

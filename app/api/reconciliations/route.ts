@@ -22,6 +22,10 @@ const fromDatabase = (item: Record<string, any>) => ({
     item.comparison_balance == null
       ? undefined
       : Number(item.comparison_balance),
+  beginningBalance:
+    item.beginning_balance == null ? undefined : Number(item.beginning_balance),
+  periodActivity:
+    item.period_activity == null ? undefined : Number(item.period_activity),
   conclusion: item.conclusion || "",
   certification: item.certification || {},
   rules: item.rules || {},

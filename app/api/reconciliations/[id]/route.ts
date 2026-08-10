@@ -41,6 +41,8 @@ export async function PATCH(
     ["materiality", "materiality"],
     ["sourceBalance", "source_balance"],
     ["comparisonBalance", "comparison_balance"],
+    ["beginningBalance", "beginning_balance"],
+    ["periodActivity", "period_activity"],
     ["rules", "rules"],
     ["closePeriodId", "close_period_id"],
     ["profileId", "profile_id"],

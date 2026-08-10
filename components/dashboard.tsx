@@ -40,6 +40,9 @@ import {
   MappingTemplate,
   MatchingRule,
   Match,
+  JournalAdjustment,
+  JournalLine,
+  EvidenceFile,
   ReconciliationRules,
   ReconciliationProfile,
   ReconciliationRun,
@@ -53,6 +56,7 @@ import {
 } from "@/lib/csv";
 import {
   parseSpreadsheetFile,
+  downloadXlsx,
   spreadsheetAccept,
   SpreadsheetPreview,
   spreadsheetSourceName,
@@ -102,6 +106,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
     [selectedId, setSelectedId] = useState("");
   const [closePeriods, setClosePeriods] = useState<ClosePeriod[]>([]),
     [matchingRules, setMatchingRules] = useState<MatchingRule[]>([]),
+    [adjustments, setAdjustments] = useState<JournalAdjustment[]>([]),
+    [evidence, setEvidence] = useState<EvidenceFile[]>([]),
     [reconciliationProfiles, setReconciliationProfiles] = useState<
       ReconciliationProfile[]
     >([]);
@@ -125,6 +131,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [saving, setSaving] = useState(false),
+    [adjustmentDraftMatchId, setAdjustmentDraftMatchId] = useState(""),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState<"all" | Match["status"]>("all");
   const leftRef = useRef<HTMLInputElement>(null),
@@ -191,20 +198,26 @@ export function Dashboard({ user }: { user: UserInfo }) {
   }
   async function loadRuns() {
     try {
-      const [response, closeResponse, profileResponse] = await Promise.all([
+      const [response, closeResponse, profileResponse, adjustmentResponse, evidenceResponse] = await Promise.all([
         fetch("/api/reconciliations"),
         fetch("/api/close-periods"),
         fetch("/api/reconciliation-profiles"),
+        fetch("/api/adjustments"),
+        fetch("/api/evidence"),
       ]);
       const data = await response.json(),
         closeData = await closeResponse.json(),
-        profileData = await profileResponse.json();
+        profileData = await profileResponse.json(),
+        adjustmentData = await adjustmentResponse.json(),
+        evidenceData = await evidenceResponse.json();
       if (!response.ok) throw new Error(data.error);
       setRuns(data.runs);
       setTemplates(data.templates);
       setMatchingRules(data.rules || []);
       setClosePeriods(closeData.periods || []);
       setReconciliationProfiles(profileData.profiles || []);
+      setAdjustments(adjustmentData.adjustments || []);
+      setEvidence(evidenceData.evidence || []);
       setSelectedId((current) => current || data.runs[0]?.id || "");
     } catch (caught) {
       setError(
@@ -556,6 +569,66 @@ export function Dashboard({ user }: { user: UserInfo }) {
     );
     await updateRun({ matches });
   }
+  async function saveAdjustment(
+    payload: Partial<JournalAdjustment>,
+    id?: string,
+  ) {
+    const response = await fetch(id ? `/api/adjustments/${id}` : "/api/adjustments", {
+      method: id ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.error || "The adjustment could not be saved.");
+      return undefined;
+    }
+    setAdjustments((current) =>
+      id
+        ? current.map((item) => (item.id === id ? data.adjustment : item))
+        : [data.adjustment, ...current],
+    );
+    setError("");
+    return data.adjustment as JournalAdjustment;
+  }
+  async function uploadEvidence(
+    file: File | undefined,
+    options: { reconciliationId?: string; adjustmentId?: string; matchId?: string },
+  ) {
+    if (!file) return;
+    const form = new FormData();
+    form.set("file", file);
+    if (options.reconciliationId) form.set("reconciliationId", options.reconciliationId);
+    if (options.adjustmentId) form.set("adjustmentId", options.adjustmentId);
+    if (options.matchId) form.set("matchId", options.matchId);
+    const response = await fetch("/api/evidence", { method: "POST", body: form });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.error || "The supporting evidence could not be uploaded.");
+      return;
+    }
+    setEvidence((current) => [data.evidence, ...current]);
+    setNotice("Supporting evidence attached.");
+  }
+  function startAdjustment(matchId: string) {
+    setAdjustmentDraftMatchId(matchId);
+    requestAnimationFrame(() =>
+      document.querySelector(".adjustment-panel")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
+  }
+  async function deleteEvidence(id: string) {
+    const response = await fetch(`/api/evidence/${id}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.error || "The evidence file could not be removed.");
+      return;
+    }
+    setEvidence((current) => current.filter((item) => item.id !== id));
+    setNotice("Supporting evidence removed.");
+  }
   function exportRun() {
     if (!selected) return;
     const headers = [
@@ -601,16 +674,21 @@ export function Dashboard({ user }: { user: UserInfo }) {
   }
   function printPacket() {
     if (!selected) return;
+    const packetAdjustments = adjustments.filter((item) => item.reconciliationId === selected.id);
+    const packetEvidence = evidence.filter((item) => item.reconciliationId === selected.id);
+    const beginning = selected.beginningBalance ?? 0;
+    const activity = selected.periodActivity ?? sourceBalance - beginning;
+    const adjustmentEffect = packetAdjustments.filter((item) => item.status === "approved" || item.status === "posted").reduce((sum, item) => sum + ((item.lines[0]?.debit || 0) - (item.lines[0]?.credit || 0)), 0);
     const open = window.open("", "_blank");
     if (!open) return;
     open.document.write(
-      `<title>${selected.name} reconciliation packet</title><style>body{font:14px Arial;color:#17233b;padding:40px}h1{margin-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{border:1px solid #ddd;padding:14px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border-bottom:1px solid #ddd;text-align:left;padding:8px}small{color:#667}</style><h1>${escapeText(selected.name)}</h1><p>${selected.periodEnd || "No period"} · ${selected.status}</p><div class="grid"><div class="card">Source<br><b>${money.format(sourceBalance)}</b></div><div class="card">Comparison<br><b>${money.format(comparisonBalance)}</b></div><div class="card">Explained<br><b>${money.format(explained)}</b></div><div class="card">Unexplained<br><b>${money.format(Math.abs(sourceBalance - comparisonBalance) - explained)}</b></div></div><h2>Conclusion</h2><p>${escapeText(selected.conclusion || "Not documented")}</p><table><tr><th>Item</th><th>Amount</th><th>Resolution</th><th>Explanation</th></tr>${selected.matches
+      `<title>${selected.name} reconciliation packet</title><style>body{font:14px Arial;color:#17233b;padding:40px}h1{margin-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{border:1px solid #ddd;padding:14px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border-bottom:1px solid #ddd;text-align:left;padding:8px}small{color:#667}</style><h1>${escapeText(selected.name)}</h1><p>${selected.periodEnd || "No period"} · ${selected.status}</p><div class="grid"><div class="card">Source<br><b>${money.format(sourceBalance)}</b></div><div class="card">Comparison<br><b>${money.format(comparisonBalance)}</b></div><div class="card">Explained<br><b>${money.format(explained)}</b></div><div class="card">Unexplained<br><b>${money.format(Math.abs(sourceBalance - comparisonBalance) - explained)}</b></div></div><h2>Balance roll-forward</h2><p>${money.format(beginning)} beginning + ${money.format(activity)} activity + ${money.format(adjustmentEffect)} adjustments = <b>${money.format(beginning + activity + adjustmentEffect)}</b> adjusted ending.</p><h2>Conclusion</h2><p>${escapeText(selected.conclusion || "Not documented")}</p><table><tr><th>Item</th><th>Amount</th><th>Resolution</th><th>Explanation</th></tr>${selected.matches
         .filter((item) => item.status !== "matched")
         .map(
           (item) =>
             `<tr><td>${escapeText(item.left.id)}</td><td>${money.format(item.left.amount)}</td><td>${escapeText(item.exceptionType || item.status)}</td><td>${escapeText(item.explanation || "Open")}</td></tr>`,
         )
-        .join("")}</table><script>window.print()<\/script>`,
+        .join("")}</table><h2>Adjusting journal entries</h2><table><tr><th>Entry</th><th>Status</th><th>Debits</th><th>Posting reference</th></tr>${packetAdjustments.map((item) => `<tr><td>${escapeText(item.title)}</td><td>${escapeText(item.status)}</td><td>${money.format(item.lines.reduce((sum, line) => sum + line.debit, 0))}</td><td>${escapeText(item.externalReference || "Not posted")}</td></tr>`).join("")}</table><h2>Supporting evidence</h2><ul>${packetEvidence.map((file) => `<li>${escapeText(file.fileName)}${file.matchId ? ` · item ${escapeText(file.matchId)}` : ""}</li>`).join("") || "<li>No supporting files attached</li>"}</ul><script>window.print()<\/script>`,
     );
     open.document.close();
   }
@@ -777,6 +855,12 @@ export function Dashboard({ user }: { user: UserInfo }) {
             setPeriods={setClosePeriods}
             runs={runs}
             setRuns={setRuns}
+            adjustments={adjustments}
+            setAdjustments={setAdjustments}
+            evidence={evidence}
+            saveAdjustment={saveAdjustment}
+            uploadEvidence={uploadEvidence}
+            deleteEvidence={deleteEvidence}
             user={user}
             selectedCloseId={activeCloseId}
             selectClose={(closeId) => navigateDashboard("close", { closeId })}
@@ -788,6 +872,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           <Settings
             user={user}
             templates={templates}
+            setTemplates={setTemplates}
             rules={matchingRules}
             setRules={setMatchingRules}
           />
@@ -825,6 +910,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           <WorkspaceOverview
             runs={runs}
             periods={closePeriods}
+            adjustments={adjustments}
             openReconciliation={(id) => {
               navigateDashboard("reconciliation", { reconciliationId: id });
             }}
@@ -890,6 +976,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
               explained={explained}
               materiality={selected.materiality}
             />
+            <BalanceRollforward
+              run={selected}
+              adjustments={adjustments.filter((item) => item.reconciliationId === selected.id)}
+              update={updateRun}
+            />
             <section className="metrics">
               <Metric
                 label="Revenue processed"
@@ -925,6 +1016,18 @@ export function Dashboard({ user }: { user: UserInfo }) {
                 warn
               />
             </section>
+            <AdjustmentPanel
+              reconciliation={selected}
+              closePeriodId={selected.closePeriodId}
+              adjustments={adjustments.filter((item) => item.reconciliationId === selected.id)}
+              evidence={evidence.filter((item) => item.reconciliationId === selected.id)}
+              draftMatch={selected.matches.find((item) => item.id === adjustmentDraftMatchId)}
+              clearDraft={() => setAdjustmentDraftMatchId("")}
+              saveAdjustment={saveAdjustment}
+              uploadEvidence={uploadEvidence}
+              deleteEvidence={deleteEvidence}
+              user={user}
+            />
             <CertificationPanel run={selected} user={user} update={updateRun} />
             <section className="panel activity full-activity">
               <div className="panel-title">
@@ -961,7 +1064,16 @@ export function Dashboard({ user }: { user: UserInfo }) {
                   </select>
                 </div>
               </div>
-              <Results rows={rows} decide={decide} update={updateException} />
+              <Results
+                rows={rows}
+                decide={decide}
+                update={updateException}
+                adjustments={adjustments.filter((item) => item.reconciliationId === selected.id)}
+                evidence={evidence.filter((item) => item.reconciliationId === selected.id)}
+                createAdjustment={startAdjustment}
+                uploadEvidence={(file, matchId) => uploadEvidence(file, { reconciliationId: selected.id, matchId })}
+                deleteEvidence={deleteEvidence}
+              />
             </section>
           </>
         )}
@@ -1135,12 +1247,14 @@ function Empty({ onStart }: { onStart: () => void }) {
 function WorkspaceOverview({
   runs,
   periods,
+  adjustments,
   openReconciliation,
   openClose,
   start,
 }: {
   runs: ReconciliationRun[];
   periods: ClosePeriod[];
+  adjustments: JournalAdjustment[];
   openReconciliation: (id: string) => void;
   openClose: () => void;
   start: () => void;
@@ -1158,7 +1272,7 @@ function WorkspaceOverview({
   const closeDone =
     activeClose?.tasks.filter((task) => task.status === "done").length || 0;
   const closeTotal = activeClose?.tasks.length || 0;
-  const closePercent = activeClose ? closeReadiness(activeClose, runs) : 0;
+  const closePercent = activeClose ? closeReadiness(activeClose, runs, adjustments) : 0;
   const closeRuns = activeClose
     ? runs.filter((run) => run.closePeriodId === activeClose.id)
     : [];
@@ -1304,10 +1418,20 @@ function Results({
   rows,
   decide,
   update,
+  adjustments,
+  evidence,
+  createAdjustment,
+  uploadEvidence,
+  deleteEvidence,
 }: {
   rows: Match[];
   decide: (id: string, decision: "pending" | "approved" | "rejected") => void;
   update: (id: string, patch: Partial<Match>) => void;
+  adjustments: JournalAdjustment[];
+  evidence: EvidenceFile[];
+  createAdjustment: (matchId: string) => void;
+  uploadEvidence: (file: File | undefined, matchId: string) => void;
+  deleteEvidence: (id: string) => void;
 }) {
   return (
     <div className="table-scroll">
@@ -1429,6 +1553,37 @@ function Results({
                           update(item.id, { dueDate: event.target.value })
                         }
                       />
+                    </div>
+                    <div className="exception-support-actions">
+                      <button type="button" onClick={() => createAdjustment(item.id)}>
+                        Create adjustment
+                      </button>
+                      <label>
+                        Attach evidence
+                        <input
+                          hidden
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.xlsx,.xls"
+                          onChange={(event) => {
+                            uploadEvidence(event.target.files?.[0], item.id);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {(adjustments.some((entry) => entry.matchId === item.id) ||
+                      evidence.some((file) => file.matchId === item.id)) && (
+                      <small className="exception-linked-records">
+                        {adjustments.filter((entry) => entry.matchId === item.id).length} adjustment · {evidence.filter((file) => file.matchId === item.id).length} file
+                      </small>
+                    )}
+                    <div className="evidence-links exception-evidence-links">
+                      {evidence.filter((file) => file.matchId === item.id && !file.adjustmentId).map((file) => (
+                        <span key={file.id}>
+                          <a href={file.url} target="_blank" rel="noreferrer">{file.fileName}</a>
+                          <button aria-label={`Remove ${file.fileName}`} onClick={() => deleteEvidence(file.id)}><X /></button>
+                        </span>
+                      ))}
                     </div>
                   </div>
                 ) : (
@@ -1819,18 +1974,33 @@ function ReconciliationTabs({
 function Settings({
   user,
   templates,
+  setTemplates,
   rules,
   setRules,
 }: {
   user: UserInfo;
   templates: MappingTemplate[];
+  setTemplates: (templates: MappingTemplate[]) => void;
   rules: MatchingRule[];
   setRules: (rules: MatchingRule[]) => void;
 }) {
   const [ruleName, setRuleName] = useState("Standard matching"),
     [dateTolerance, setDateTolerance] = useState(3),
     [amountTolerance, setAmountTolerance] = useState(1),
-    [autoApprove, setAutoApprove] = useState(90);
+    [autoApprove, setAutoApprove] = useState(90),
+    [ruleMessage, setRuleMessage] = useState(""),
+    [mappingMessage, setMappingMessage] = useState(""),
+    [editingTemplateId, setEditingTemplateId] = useState(""),
+    [templateName, setTemplateName] = useState(""),
+    [deleteTemplateId, setDeleteTemplateId] = useState("");
+  useEffect(() => {
+    const current = rules[0];
+    if (!current) return;
+    setRuleName(current.name);
+    setDateTolerance(current.settings.dateTolerance);
+    setAmountTolerance(current.settings.amountTolerance);
+    setAutoApprove(current.settings.autoApprove);
+  }, [rules]);
   async function saveRule() {
     const settings = {
       dateTolerance,
@@ -1838,13 +2008,66 @@ function Settings({
       autoApprove,
       allowGrouping: true,
     };
-    const response = await fetch("/api/matching-rules", {
-      method: "POST",
+    setRuleMessage("");
+    const current = rules[0];
+    const response = await fetch(
+      current ? `/api/matching-rules/${current.id}` : "/api/matching-rules",
+      {
+      method: current ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: ruleName, settings }),
+      },
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      setRuleMessage(data.error || "The default rule could not be saved.");
+      return;
+    }
+    setRules(current ? [data.rule, ...rules.slice(1)] : [data.rule, ...rules]);
+    setRuleMessage("Default matching rules saved.");
+  }
+  function restoreRuleDefaults() {
+    setRuleName("Standard matching");
+    setDateTolerance(3);
+    setAmountTolerance(1);
+    setAutoApprove(90);
+    setRuleMessage("Defaults restored in the form. Select Save defaults to apply them.");
+  }
+  async function renameTemplate(template: MappingTemplate) {
+    const response = await fetch(`/api/mapping-templates/${template.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: templateName }),
     });
     const data = await response.json();
-    if (response.ok) setRules([...rules, data.rule]);
+    if (!response.ok) {
+      setMappingMessage(data.error || "The layout could not be renamed.");
+      return;
+    }
+    setTemplates(
+      templates.map((item) => (item.id === template.id ? data.template : item)),
+    );
+    setEditingTemplateId("");
+    setTemplateName("");
+    setMappingMessage("Remembered file layout renamed.");
+  }
+  async function deleteTemplate(template: MappingTemplate) {
+    if (deleteTemplateId !== template.id) {
+      setDeleteTemplateId(template.id);
+      setMappingMessage("Select Confirm delete to remove this remembered layout.");
+      return;
+    }
+    const response = await fetch(`/api/mapping-templates/${template.id}`, {
+      method: "DELETE",
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMappingMessage(data.error || "The layout could not be deleted.");
+      return;
+    }
+    setTemplates(templates.filter((item) => item.id !== template.id));
+    setDeleteTemplateId("");
+    setMappingMessage("Remembered file layout deleted.");
   }
   return (
     <section className="settings-grid">
@@ -1869,8 +2092,11 @@ function Settings({
       </div>
       <TeamPanel user={user} />
       <div className="panel">
-        <h2>Matching rules</h2>
-        <p>Set the tolerances used for new reconciliations.</p>
+        <div className="settings-title">
+          <h2>Default matching rules</h2>
+          <InfoTip text="These defaults control how Taliqor scores new reconciliations. Recurring-account rules can override them later." />
+        </div>
+        <p>Choose how closely transactions must agree before Taliqor suggests or automatically approves a match.</p>
         <label>
           Rule name
           <input
@@ -1912,39 +2138,72 @@ function Settings({
             <small>confidence</small>
           </label>
         </div>
-        <button className="primary" onClick={saveRule}>
-          Save rule
-        </button>
-        {rules.map((rule) => (
-          <div className="template-row" key={rule.id}>
+        <div className="settings-actions">
+          <button className="primary" onClick={saveRule}>Save defaults</button>
+          <button onClick={restoreRuleDefaults}>Restore defaults</button>
+        </div>
+        {ruleMessage && <p className="settings-message">{ruleMessage}</p>}
+        {rules[0] && (
+          <div className="template-row active-rule">
             <Gear />
             <div>
-              <strong>{rule.name}</strong>
+              <strong>Currently applied: {rules[0].name}</strong>
               <small>
-                ±{rule.settings.dateTolerance} days ·{" "}
-                {rule.settings.amountTolerance}% tolerance ·{" "}
-                {rule.settings.autoApprove}% auto
+                ±{rules[0].settings.dateTolerance} days · {rules[0].settings.amountTolerance}% amount difference · {rules[0].settings.autoApprove}% confidence
               </small>
             </div>
             <CheckCircle weight="fill" />
           </div>
-        ))}
+        )}
       </div>
       <div className="panel">
-        <h2>Saved mappings</h2>
-        <p>Taliqor automatically applies these when the same columns return.</p>
+        <div className="settings-title">
+          <h2>Remembered file layouts</h2>
+          <InfoTip text="When the same column headers return in a future upload, Taliqor automatically reuses these field assignments so you do not have to map them again." />
+        </div>
+        <p>Recognized spreadsheet layouts and the fields Taliqor will map automatically.</p>
+        {mappingMessage && <p className="settings-message">{mappingMessage}</p>}
         {templates.length ? (
           templates.map((template) => (
-            <div className="template-row" key={template.id}>
+            <div className="template-row mapping-template-row" key={template.id}>
               <FileCsv />
               <div>
-                <strong>{template.name}</strong>
-                <small>
-                  {Object.values(template.mapping).filter(Boolean).length}{" "}
-                  mapped fields
-                </small>
+                {editingTemplateId === template.id ? (
+                  <div className="mapping-rename">
+                    <input
+                      value={templateName}
+                      onChange={(event) => setTemplateName(event.target.value)}
+                      aria-label="File layout name"
+                    />
+                    <button onClick={() => renameTemplate(template)}>Save</button>
+                    <button onClick={() => setEditingTemplateId("")}>Cancel</button>
+                  </div>
+                ) : (
+                  <strong>{template.name}</strong>
+                )}
+                <div className="mapping-fields">
+                  {Object.entries(template.mapping)
+                    .filter(([, column]) => Boolean(column))
+                    .map(([field, column]) => (
+                      <span key={field}><b>{field}</b> → {column}</span>
+                    ))}
+                </div>
               </div>
-              <CheckCircle weight="fill" />
+              <div className="mapping-row-actions">
+                <button
+                  onClick={() => {
+                    setEditingTemplateId(template.id);
+                    setTemplateName(template.name);
+                    setDeleteTemplateId("");
+                  }}
+                >Rename</button>
+                <button
+                  className={deleteTemplateId === template.id ? "confirm-delete" : ""}
+                  onClick={() => deleteTemplate(template)}
+                >
+                  {deleteTemplateId === template.id ? "Confirm delete" : "Delete"}
+                </button>
+              </div>
             </div>
           ))
         ) : (
@@ -2271,6 +2530,276 @@ function ControlSummary({
   );
 }
 
+function BalanceRollforward({
+  run,
+  adjustments,
+  update,
+}: {
+  run: ReconciliationRun;
+  adjustments: JournalAdjustment[];
+  update: (patch: Partial<ReconciliationRun>) => void;
+}) {
+  const beginning = run.beginningBalance ?? 0;
+  const activity = run.periodActivity ?? (run.sourceBalance ?? 0) - beginning;
+  const postedEffect = adjustments
+    .filter((item) => item.status === "approved" || item.status === "posted")
+    .reduce((sum, item) => sum + ((item.lines[0]?.debit || 0) - (item.lines[0]?.credit || 0)), 0);
+  const ending = beginning + activity + postedEffect;
+  const support = run.comparisonBalance ?? 0;
+  return (
+    <section className="panel rollforward-panel">
+      <div className="panel-title">
+        <div>
+          <h2>Balance roll-forward</h2>
+          <InfoTip text="Beginning balance plus period activity and approved or posted adjustments should arrive at the ending balance supported by the comparison source." />
+          <p>Show how this account moved during the period and tie it to support.</p>
+        </div>
+      </div>
+      <div className="rollforward-equation">
+        <label>Beginning balance<input type="number" value={beginning} onChange={(event) => update({ beginningBalance: Number(event.target.value) })} /></label>
+        <b>+</b>
+        <label>Period activity<input type="number" value={activity} onChange={(event) => update({ periodActivity: Number(event.target.value) })} /></label>
+        <b>+</b>
+        <div><span>Adjustments</span><strong>{money.format(postedEffect)}</strong></div>
+        <b>=</b>
+        <div><span>Adjusted ending</span><strong>{money.format(ending)}</strong></div>
+        <b>vs</b>
+        <div><span>Supporting balance</span><strong>{money.format(support)}</strong></div>
+      </div>
+      <p className={Math.abs(ending - support) <= run.materiality ? "rollforward-tie" : "rollforward-gap"}>
+        {Math.abs(ending - support) <= run.materiality
+          ? "Roll-forward ties within materiality."
+          : `${money.format(Math.abs(ending - support))} remains between the adjusted ending balance and support.`}
+      </p>
+    </section>
+  );
+}
+
+function AdjustmentPanel({
+  reconciliation,
+  closePeriodId,
+  adjustments,
+  evidence,
+  draftMatch,
+  clearDraft,
+  saveAdjustment,
+  uploadEvidence,
+  deleteEvidence,
+  user,
+}: {
+  reconciliation: ReconciliationRun;
+  closePeriodId?: string;
+  adjustments: JournalAdjustment[];
+  evidence: EvidenceFile[];
+  draftMatch?: Match;
+  clearDraft: () => void;
+  saveAdjustment: (payload: Partial<JournalAdjustment>, id?: string) => Promise<JournalAdjustment | undefined>;
+  uploadEvidence: (file: File | undefined, options: { reconciliationId?: string; adjustmentId?: string; matchId?: string }) => void;
+  deleteEvidence: (id: string) => void;
+  user: UserInfo;
+}) {
+  const blank = () => ({
+    title: "", description: "", postingDate: reconciliation.periodEnd || new Date().toISOString().slice(0, 10),
+    recurring: false, autoReverse: false, reversalDate: "",
+    lines: [
+      { account: "", description: "", debit: 0, credit: 0 },
+      { account: "", description: "", debit: 0, credit: 0 },
+    ] as JournalLine[],
+  });
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(blank);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (!draftMatch) return;
+    const comparison = draftMatch.right?.amount || 0;
+    const amount = Math.abs(draftMatch.proposedAdjustment ?? draftMatch.left.amount - comparison);
+    setForm({
+      ...blank(),
+      title: `Adjustment for ${draftMatch.left.id}`,
+      description: draftMatch.explanation || draftMatch.reason,
+      lines: [
+        { account: "", description: draftMatch.left.description, debit: amount, credit: 0 },
+        { account: "", description: "Offset", debit: 0, credit: amount },
+      ],
+    });
+    setOpen(true);
+  }, [draftMatch]);
+  const debits = form.lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+  const credits = form.lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+  async function create() {
+    const saved = await saveAdjustment({
+      ...form,
+      reconciliationId: reconciliation.id,
+      closePeriodId,
+      matchId: draftMatch?.id,
+      preparedBy: user.name,
+    });
+    if (!saved) return;
+    setOpen(false);
+    setForm(blank());
+    clearDraft();
+    setMessage("Adjustment saved and linked to this reconciliation.");
+  }
+  function exportAdjustment(item: JournalAdjustment) {
+    const output = ["account,description,debit,credit", ...item.lines.map((line) => [line.account, line.description, line.debit, line.credit].map(csvEscape).join(","))].join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([output], { type: "text/csv" }));
+    link.download = `${item.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-journal.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+  function exportAdjustmentXlsx(item: JournalAdjustment) {
+    downloadXlsx(
+      `${item.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-journal.xlsx`,
+      item.lines.map((line) => ({
+        Account: line.account,
+        Description: line.description,
+        Debit: line.debit,
+        Credit: line.credit,
+      })),
+    );
+  }
+  return (
+    <section className="panel adjustment-panel">
+      <div className="panel-title">
+        <div>
+          <h2>Adjusting journal entries</h2>
+          <InfoTip text="Prepare and approve balanced entries here, post them in your accounting system, then record the posting reference. Material unfinished entries block the close." />
+          <p>Turn reconciliation differences into controlled, traceable accounting actions.</p>
+        </div>
+        <button className="primary" onClick={() => { setOpen(!open); if (open) clearDraft(); }}>
+          {open ? "Cancel" : "New adjustment"}
+        </button>
+      </div>
+      {message && <p className="settings-message">{message}</p>}
+      {open && (
+        <div className="adjustment-editor">
+          <div className="adjustment-meta">
+            <label>Title<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Accrue processor fees" /></label>
+            <label>Posting date<input type="date" value={form.postingDate} onChange={(event) => setForm({ ...form, postingDate: event.target.value })} /></label>
+            <label>Description<input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Why this entry is needed" /></label>
+          </div>
+          <div className="journal-lines">
+            <div className="journal-line headings"><b>Account</b><b>Description</b><b>Debit</b><b>Credit</b></div>
+            {form.lines.map((line, index) => (
+              <div className="journal-line" key={index}>
+                <input value={line.account} onChange={(event) => setForm({ ...form, lines: form.lines.map((item, row) => row === index ? { ...item, account: event.target.value } : item) })} placeholder="Account" />
+                <input value={line.description} onChange={(event) => setForm({ ...form, lines: form.lines.map((item, row) => row === index ? { ...item, description: event.target.value } : item) })} placeholder="Line description" />
+                <input type="number" min="0" value={line.debit || ""} onChange={(event) => setForm({ ...form, lines: form.lines.map((item, row) => row === index ? { ...item, debit: Number(event.target.value), credit: event.target.value ? 0 : item.credit } : item) })} />
+                <input type="number" min="0" value={line.credit || ""} onChange={(event) => setForm({ ...form, lines: form.lines.map((item, row) => row === index ? { ...item, credit: Number(event.target.value), debit: event.target.value ? 0 : item.debit } : item) })} />
+              </div>
+            ))}
+          </div>
+          <div className="journal-total"><span>Debits {money.format(debits)}</span><span>Credits {money.format(credits)}</span><b>{Math.abs(debits - credits) < 0.005 && debits > 0 ? "Balanced" : "Out of balance"}</b></div>
+          <div className="adjustment-options">
+            <label><input type="checkbox" checked={form.recurring} onChange={(event) => setForm({ ...form, recurring: event.target.checked })} /> Repeat in future closes</label>
+            <label><input type="checkbox" checked={form.autoReverse} onChange={(event) => setForm({ ...form, autoReverse: event.target.checked })} /> Auto-reverse next period</label>
+            {form.autoReverse && <label>Reversal date<input type="date" value={form.reversalDate} onChange={(event) => setForm({ ...form, reversalDate: event.target.value })} /></label>}
+          </div>
+          <button className="primary" disabled={!form.title || !form.lines.every((line) => line.account) || Math.abs(debits - credits) >= 0.005 || debits <= 0} onClick={create}>Save adjustment</button>
+        </div>
+      )}
+      <div className="adjustment-list">
+        {adjustments.map((item) => {
+          const amount = item.lines.reduce((sum, line) => sum + line.debit, 0);
+          return (
+            <article key={item.id}>
+              <div><strong>{item.title}</strong><small>{money.format(amount)} · {item.postingDate || "No posting date"}{item.recurring ? " · Recurring" : ""}{item.entryKind === "reversal" ? " · Auto-reversal" : ""}</small></div>
+              <select value={item.status} onChange={(event) => saveAdjustment({ status: event.target.value as JournalAdjustment["status"], reviewedBy: event.target.value === "approved" ? user.name : item.reviewedBy }, item.id)}>
+                <option value="draft">Draft</option><option value="review">Ready for review</option><option value="approved">Approved</option><option value="posted">Posted</option><option value="no_entry">No entry required</option>
+              </select>
+              <input defaultValue={item.externalReference} onBlur={(event) => saveAdjustment({ externalReference: event.target.value }, item.id)} placeholder="Posting reference" />
+              <button onClick={() => exportAdjustment(item)}>Export CSV</button>
+              <button onClick={() => exportAdjustmentXlsx(item)}>Export Excel</button>
+              <label className="attachment-button">Attach<input hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.xlsx,.xls" onChange={(event) => { uploadEvidence(event.target.files?.[0], { reconciliationId: reconciliation.id, adjustmentId: item.id }); event.target.value = ""; }} /></label>
+              <div className="evidence-links">{evidence.filter((file) => file.adjustmentId === item.id).map((file) => <span key={file.id}><a href={file.url} target="_blank" rel="noreferrer">{file.fileName}</a><button aria-label={`Remove ${file.fileName}`} onClick={() => deleteEvidence(file.id)}><X /></button></span>)}</div>
+            </article>
+          );
+        })}
+        {!adjustments.length && !open && <div className="empty-small">No adjusting entries are linked to this reconciliation.</div>}
+      </div>
+    </section>
+  );
+}
+
+function CloseAdjustmentRegister({
+  period,
+  adjustments,
+  evidence,
+  saveAdjustment,
+  uploadEvidence,
+  deleteEvidence,
+  user,
+}: {
+  period: ClosePeriod;
+  adjustments: JournalAdjustment[];
+  evidence: EvidenceFile[];
+  saveAdjustment: (payload: Partial<JournalAdjustment>, id?: string) => Promise<JournalAdjustment | undefined>;
+  uploadEvidence: (file: File | undefined, options: { reconciliationId?: string; adjustmentId?: string; matchId?: string }) => void;
+  deleteEvidence: (id: string) => void;
+  user: UserInfo;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [debitAccount, setDebitAccount] = useState("");
+  const [creditAccount, setCreditAccount] = useState("");
+  const [amount, setAmount] = useState(0);
+  const [recurring, setRecurring] = useState(false);
+  const [autoReverse, setAutoReverse] = useState(false);
+  const outstanding = adjustments.filter((item) => !["posted", "no_entry"].includes(item.status));
+  async function create() {
+    const saved = await saveAdjustment({
+      closePeriodId: period.id, title, postingDate: period.periodEnd, recurring, autoReverse,
+      preparedBy: user.name,
+      lines: [
+        { account: debitAccount, description: title, debit: amount, credit: 0 },
+        { account: creditAccount, description: `Offset — ${title}`, debit: 0, credit: amount },
+      ],
+    });
+    if (saved) {
+      setOpen(false); setTitle(""); setDebitAccount(""); setCreditAccount(""); setAmount(0);
+    }
+  }
+  return (
+    <section className="panel close-adjustments">
+      <div className="panel-title">
+        <div>
+          <h2>Close adjustments</h2>
+          <InfoTip text="Track entries discovered during the close. Material entries must be posted or marked no entry required before the period can close." />
+          <p>{outstanding.length} entry{outstanding.length === 1 ? "" : "ies"} still need a final disposition.</p>
+        </div>
+        <button className="primary" onClick={() => setOpen(!open)}>{open ? "Cancel" : "New adjustment"}</button>
+      </div>
+      {open && (
+        <div className="close-adjustment-form">
+          <label>Entry title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Month-end accrual" /></label>
+          <label>Debit account<input value={debitAccount} onChange={(event) => setDebitAccount(event.target.value)} /></label>
+          <label>Credit account<input value={creditAccount} onChange={(event) => setCreditAccount(event.target.value)} /></label>
+          <label>Amount<input type="number" min="0" value={amount || ""} onChange={(event) => setAmount(Number(event.target.value))} /></label>
+          <label><input type="checkbox" checked={recurring} onChange={(event) => setRecurring(event.target.checked)} /> Repeat in future closes</label>
+          <label><input type="checkbox" checked={autoReverse} onChange={(event) => setAutoReverse(event.target.checked)} /> Reverse next period</label>
+          <button className="primary" disabled={!title || !debitAccount || !creditAccount || amount <= 0} onClick={create}>Save balanced entry</button>
+        </div>
+      )}
+      <div className="close-adjustment-list">
+        {adjustments.map((item) => (
+          <article key={item.id}>
+            <div><strong>{item.title}</strong><small>{money.format(item.lines.reduce((sum, line) => sum + line.debit, 0))}{item.entryKind === "reversal" ? " · Auto-reversal" : item.recurring ? " · Recurring" : ""}</small></div>
+            <select value={item.status} onChange={(event) => saveAdjustment({ status: event.target.value as JournalAdjustment["status"], reviewedBy: event.target.value === "approved" ? user.name : item.reviewedBy }, item.id)}>
+              <option value="draft">Draft</option><option value="review">Ready for review</option><option value="approved">Approved</option><option value="posted">Posted</option><option value="no_entry">No entry required</option>
+            </select>
+            <input defaultValue={item.externalReference} onBlur={(event) => saveAdjustment({ externalReference: event.target.value }, item.id)} placeholder="Posting reference" />
+            <button onClick={() => downloadXlsx(`${item.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-journal.xlsx`, item.lines.map((line) => ({ Account: line.account, Description: line.description, Debit: line.debit, Credit: line.credit })))}>Export Excel</button>
+            <label className="attachment-button">Attach evidence<input hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.xlsx,.xls" onChange={(event) => { uploadEvidence(event.target.files?.[0], { adjustmentId: item.id }); event.target.value = ""; }} /></label>
+            <div className="evidence-links">{evidence.filter((file) => file.adjustmentId === item.id).map((file) => <span key={file.id}><a href={file.url} target="_blank" rel="noreferrer">{file.fileName}</a><button aria-label={`Remove ${file.fileName}`} onClick={() => deleteEvidence(file.id)}><X /></button></span>)}</div>
+          </article>
+        ))}
+        {!adjustments.length && !open && <div className="empty-small">No close adjustments yet.</div>}
+      </div>
+    </section>
+  );
+}
+
 function CertificationPanel({
   run,
   user,
@@ -2441,6 +2970,12 @@ function CloseHub({
   setPeriods,
   runs,
   setRuns,
+  adjustments,
+  setAdjustments,
+  evidence,
+  saveAdjustment,
+  uploadEvidence,
+  deleteEvidence,
   user,
   selectedCloseId,
   selectClose,
@@ -2450,6 +2985,12 @@ function CloseHub({
   setPeriods: (periods: ClosePeriod[]) => void;
   runs: ReconciliationRun[];
   setRuns: (runs: ReconciliationRun[]) => void;
+  adjustments: JournalAdjustment[];
+  setAdjustments: (adjustments: JournalAdjustment[]) => void;
+  evidence: EvidenceFile[];
+  saveAdjustment: (payload: Partial<JournalAdjustment>, id?: string) => Promise<JournalAdjustment | undefined>;
+  uploadEvidence: (file: File | undefined, options: { reconciliationId?: string; adjustmentId?: string; matchId?: string }) => void;
+  deleteEvidence: (id: string) => void;
   user: UserInfo;
   selectedCloseId: string;
   selectClose: (id: string) => void;
@@ -2485,6 +3026,9 @@ function CloseHub({
       data = await response.json();
     if (response.ok) {
       setPeriods([data.period, ...periods]);
+      const adjustmentResponse = await fetch("/api/adjustments");
+      const adjustmentData = await adjustmentResponse.json();
+      if (adjustmentResponse.ok) setAdjustments(adjustmentData.adjustments || []);
       selectClose(data.period.id);
       setCreating(false);
     }
@@ -2512,6 +3056,20 @@ function CloseHub({
       runs.map((run) => (run.id === runId ? { ...run, closePeriodId } : run)),
     );
     setReconciliationToConnect("");
+  }
+  function printClosePacket() {
+    if (!selected) return;
+    const linkedRuns = runs.filter((run) => run.closePeriodId === selected.id);
+    const entries = adjustments.filter((item) => item.closePeriodId === selected.id);
+    const entryIds = new Set(entries.map((item) => item.id));
+    const files = evidence.filter((item) =>
+      (item.reconciliationId && linkedRuns.some((run) => run.id === item.reconciliationId)) ||
+      (item.adjustmentId && entryIds.has(item.adjustmentId)),
+    );
+    const packet = window.open("", "_blank");
+    if (!packet) return;
+    packet.document.write(`<title>${escapeText(selected.name)} close packet</title><style>body{font:14px Arial;color:#17233b;padding:40px}h1{margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:18px 0 28px}th,td{border-bottom:1px solid #ddd;text-align:left;padding:8px}.done{color:#087866}.open{color:#b33b2d}</style><h1>${escapeText(selected.name)}</h1><p>${selected.periodEnd} · ${selected.status} · ${closeReadiness(selected, runs, adjustments)}% close ready</p><h2>Close checklist</h2><table><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th></tr>${selected.tasks.map((task) => `<tr><td>${escapeText(task.name)}</td><td>${escapeText(task.owner)}</td><td>${task.dueDate}</td><td class="${task.status === "done" ? "done" : "open"}">${task.status}</td></tr>`).join("")}</table><h2>Reconciliations</h2><table><tr><th>Name</th><th>Period</th><th>Status</th></tr>${linkedRuns.map((run) => `<tr><td>${escapeText(run.name)}</td><td>${run.periodEnd || "—"}</td><td>${escapeText(reconciliationStatusLabel(run.status))}</td></tr>`).join("")}</table><h2>Variance review</h2><table><tr><th>Account</th><th>Difference</th><th>Explanation</th></tr>${selected.variances.map((item) => `<tr><td>${escapeText(item.account)}</td><td>${money.format(item.difference)}</td><td>${escapeText(item.explanation || "Open")}</td></tr>`).join("")}</table><h2>Adjusting journal entries</h2><table><tr><th>Entry</th><th>Amount</th><th>Status</th><th>Posting reference</th></tr>${entries.map((item) => `<tr><td>${escapeText(item.title)}</td><td>${money.format(item.lines.reduce((sum, line) => sum + line.debit, 0))}</td><td>${escapeText(item.status)}</td><td>${escapeText(item.externalReference || "—")}</td></tr>`).join("")}</table><h2>Supporting evidence</h2><ul>${files.map((file) => `<li>${escapeText(file.fileName)}</li>`).join("") || "<li>No files attached</li>"}</ul><script>window.print()<\/script>`);
+    packet.document.close();
   }
   function toggle(task: CloseTask) {
     if (!selected) return;
@@ -2673,7 +3231,7 @@ function CloseHub({
             const certifiedRuns = connected.filter(
               (run) => run.status === "certified",
             ).length;
-            const progress = closeReadiness(period, runs);
+            const progress = closeReadiness(period, runs, adjustments);
             return (
               <button key={period.id} onClick={() => selectClose(period.id)}>
                 <div>
@@ -2726,7 +3284,7 @@ function CloseHub({
           item.status !== "matched" &&
           Math.abs(item.left.amount) > selected.materiality,
       ).length,
-    readiness = closeReadiness(selected, runs);
+    readiness = closeReadiness(selected, runs, adjustments);
   return (
     <>
       <section className="close-head">
@@ -2754,6 +3312,7 @@ function CloseHub({
           <span>close ready</span>
         </div>
         <button onClick={() => setCreating(true)}>New period</button>
+        <button onClick={printClosePacket}><Printer /> Close packet</button>
         <button
           className={`primary close-period-action${selected.status === "closed" ? " closed" : ""}`}
           disabled={readiness < 100}
@@ -2789,6 +3348,15 @@ function CloseHub({
           trend="reviewed"
         />
       </section>
+      <CloseAdjustmentRegister
+        period={selected}
+        adjustments={adjustments.filter((item) => item.closePeriodId === selected.id)}
+        evidence={evidence}
+        saveAdjustment={saveAdjustment}
+        uploadEvidence={uploadEvidence}
+        deleteEvidence={deleteEvidence}
+        user={user}
+      />
       <section className="panel close-reconciliations">
         <div className="panel-title">
           <div>
@@ -3316,7 +3884,11 @@ function reconciliationMethodLabel(method: ReconciliationRun["method"]) {
     variance: "Variance analysis",
   }[method];
 }
-function closeReadiness(period: ClosePeriod, runs: ReconciliationRun[]) {
+function closeReadiness(
+  period: ClosePeriod,
+  runs: ReconciliationRun[],
+  adjustments: JournalAdjustment[] = [],
+) {
   const completedTasks = period.tasks.filter(
     (task) => task.status === "done",
   ).length;
@@ -3332,7 +3904,15 @@ function closeReadiness(period: ClosePeriod, runs: ReconciliationRun[]) {
   const certificationProgress = connectedRuns.length
     ? certifiedRuns / connectedRuns.length
     : 0;
-  return Math.round(checklistProgress * 70 + certificationProgress * 30);
+  const base = Math.round(checklistProgress * 70 + certificationProgress * 30);
+  const hasOpenMaterialAdjustment = adjustments
+    .filter((item) => item.closePeriodId === period.id)
+    .some(
+      (item) =>
+        !["posted", "no_entry"].includes(item.status) &&
+        item.lines.reduce((sum, line) => sum + line.debit, 0) > period.materiality,
+    );
+  return hasOpenMaterialAdjustment ? Math.min(base, 99) : base;
 }
 function greeting() {
   const hour = new Date().getHours();

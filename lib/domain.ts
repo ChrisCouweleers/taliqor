@@ -93,10 +93,52 @@ export type ReconciliationRun = {
   materiality: number;
   sourceBalance?: number;
   comparisonBalance?: number;
+  beginningBalance?: number;
+  periodActivity?: number;
   conclusion: string;
   certification: Certification;
   rules: ReconciliationRules;
   priorReconciliationId?: string;
+};
+
+export type JournalLine = {
+  account: string;
+  description: string;
+  debit: number;
+  credit: number;
+};
+
+export type JournalAdjustment = {
+  id: string;
+  reconciliationId?: string;
+  closePeriodId?: string;
+  matchId?: string;
+  title: string;
+  description: string;
+  postingDate?: string;
+  status: "draft" | "review" | "approved" | "posted" | "no_entry";
+  lines: JournalLine[];
+  recurring: boolean;
+  autoReverse: boolean;
+  reversalDate?: string;
+  externalReference: string;
+  preparedBy: string;
+  reviewedBy: string;
+  entryKind: "original" | "recurring_copy" | "reversal";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EvidenceFile = {
+  id: string;
+  reconciliationId?: string;
+  adjustmentId?: string;
+  matchId?: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+  createdAt: string;
 };
 
 export type ReconciliationProfile = {

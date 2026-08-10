@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requestBodyTooLarge } from "@/lib/security";
 
-const bucket = "reconciliation-files";
+const buckets = ["reconciliation-files", "supporting-evidence"];
 
 async function listFiles(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  bucket: string,
   folder: string,
 ): Promise<string[]> {
   const paths: string[] = [];
@@ -18,7 +19,7 @@ async function listFiles(
     for (const item of data) {
       const path = `${folder}/${item.name}`;
       if (item.id) paths.push(path);
-      else paths.push(...(await listFiles(supabase, path)));
+      else paths.push(...(await listFiles(supabase, bucket, path)));
     }
     if (data.length < 1000) break;
   }
@@ -55,10 +56,12 @@ export async function POST(request: Request) {
       .eq("organization_id", membership.organization_id);
     if (count === 1) {
       try {
-        const paths = await listFiles(supabase, membership.organization_id);
-        for (let index = 0; index < paths.length; index += 1000) {
-          const { error } = await supabase.storage.from(bucket).remove(paths.slice(index, index + 1000));
-          if (error) throw error;
+        for (const bucket of buckets) {
+          const paths = await listFiles(supabase, bucket, membership.organization_id);
+          for (let index = 0; index < paths.length; index += 1000) {
+            const { error } = await supabase.storage.from(bucket).remove(paths.slice(index, index + 1000));
+            if (error) throw error;
+          }
         }
       } catch {
         return NextResponse.json(
