@@ -38,8 +38,8 @@ export function Homepage() {
           <a href="#security">Security</a>
         </div>
         <div className="nav-actions">
-          <Link className="login-link" href="/auth">Log in</Link>
-          <Link className="nav-cta" href="/auth">Start for free <ArrowRight /></Link>
+          <Link className="login-link" href="/login">Log in</Link>
+          <Link className="nav-cta" href="/signup">Start for free <ArrowRight /></Link>
         </div>
       </nav>
 
@@ -50,7 +50,7 @@ export function Homepage() {
             <h1>Every payment.<br/><em>Perfectly reconciled.</em></h1>
             <p>Taliqor connects your payment processors, banks, and ledgers—then automatically matches every transaction and surfaces what needs your attention.</p>
             <div className="hero-actions">
-              <Link className="hero-primary" href="/dashboard">Explore the product <ArrowRight /></Link>
+              <Link className="hero-primary" href="/signup">Start reconciling free <ArrowRight /></Link>
               <a className="hero-secondary" href="#workflow"><span className="play"><span /></span> See how it works</a>
             </div>
             <div className="hero-proof">
@@ -118,7 +118,7 @@ export function Homepage() {
 
         <section className="security-cta" id="security">
           <div className="security-copy"><span className="security-icon"><LockKey weight="duotone"/></span><div><span className="eyebrow light"><span/>Designed for financial data</span><h2>Clarity you can trust.<br/>Controls you can prove.</h2><p>Role-based access, a complete audit trail, and encryption at rest and in transit are part of the foundation—not an afterthought.</p><div className="security-points"><span><Check/>Read-only connections</span><span><Check/>End-to-end audit trail</span><span><Check/>Secure by design</span></div></div></div>
-          <div className="cta-card" id="contact"><span>READY WHEN YOU ARE</span><h3>Make your next close<br/>your cleanest one yet.</h3><p>Explore the working Taliqor prototype and see reconciliation from source to resolution.</p><Link href="/dashboard">View the live demo <ArrowRight/></Link><small><Clock/> Takes less than two minutes</small></div>
+          <div className="cta-card" id="contact"><span>READY WHEN YOU ARE</span><h3>Make your next close<br/>your cleanest one yet.</h3><p>Create your free workspace and reconcile your first two spreadsheets.</p><Link href="/signup">Create free workspace <ArrowRight/></Link><small><Clock/> Takes less than two minutes</small></div>
         </section>
       </main>
 
