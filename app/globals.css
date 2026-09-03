@@ -2827,6 +2827,8 @@ button {
   justify-content: center;
   margin-top: 9px;
 }
+.account-plan-actions { display:grid; gap:8px; }
+.account-plan-actions > button { width:100%; justify-content:center; }
 @media (max-width: 1000px) {
   .account-plan-grid {
     grid-template-columns: 1fr 1fr;

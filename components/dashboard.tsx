@@ -987,6 +987,9 @@ export function Dashboard({ user }: { user: UserInfo }) {
             setProfiles={setReconciliationProfiles}
             runs={runs}
             openHistory={() => navigateDashboard("history")}
+            openReconciliation={(id) =>
+              navigateDashboard("reconciliation", { reconciliationId: id })
+            }
             start={(profile) => {
               const period = new Date().toLocaleDateString("en-US", {
                 month: "long",
@@ -1819,12 +1822,14 @@ function AccountPlan({
   setProfiles,
   runs,
   openHistory,
+  openReconciliation,
   start,
 }: {
   profiles: ReconciliationProfile[];
   setProfiles: (profiles: ReconciliationProfile[]) => void;
   runs: ReconciliationRun[];
   openHistory: () => void;
+  openReconciliation: (id: string) => void;
   start: (profile: ReconciliationProfile) => void;
 }) {
   const [creating, setCreating] = useState(false);
@@ -2028,6 +2033,15 @@ function AccountPlan({
       <div className="account-plan-grid">
         {profiles.map((profile) => {
           const lastRun = runs.find((run) => run.profileId === profile.id);
+          const openRun = runs.find(
+            (run) => run.profileId === profile.id && run.status !== "certified",
+          );
+          const runToOpen = openRun || lastRun;
+          const openLabel = openRun?.status === "review"
+            ? "Review reconciliation"
+            : openRun
+              ? "Continue reconciliation"
+              : "View reconciliation";
           return (
             <article className="panel" key={profile.id}>
               <div>
@@ -2066,11 +2080,26 @@ function AccountPlan({
                     ? reconciliationStatusLabel(lastRun.status)
                     : "Not started"}
                 </span>
-                <small>{lastRun?.periodEnd || "No prior period"}</small>
+                <small>
+                  {lastRun?.periodEnd
+                    ? `Period end: ${new Date(`${lastRun.periodEnd}T12:00:00`).toLocaleDateString()}`
+                    : "No reconciliation started"}
+                </small>
               </div>
-              <button className="primary" onClick={() => start(profile)}>
-                Start this period <ArrowRight />
-              </button>
+              <div className="account-plan-actions">
+                {runToOpen ? (
+                  <button className="primary" onClick={() => openReconciliation(runToOpen.id)}>
+                    {openLabel} <ArrowRight />
+                  </button>
+                ) : (
+                  <button className="primary" onClick={() => start(profile)}>
+                    Start this period <ArrowRight />
+                  </button>
+                )}
+                {lastRun?.status === "certified" && !openRun && (
+                  <button onClick={() => start(profile)}>Start next period</button>
+                )}
+              </div>
             </article>
           );
         })}
