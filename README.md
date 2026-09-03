@@ -94,22 +94,3 @@ Taliqor helps teams move from raw exports to a review-ready reconciliation:
 ## 🚀 Open beta
 
 Taliqor is currently in open beta. Create a free workspace at [taliqor.com](https://taliqor.com), reconcile your first two exports, and help shape the future of a calmer, faster close.
-
-## 🛠️ Local development
-
-Install dependencies and start the Next.js development server:
-
-```bash
-npm install
-npm run dev
-```
-
-Copy `.env.example` to `.env.local`, add the Supabase project values, and apply the migrations in `supabase/migrations` before using authenticated workspace features.
-
-Quality checks:
-
-```bash
-npm test
-npm run lint
-npm run build
-```
