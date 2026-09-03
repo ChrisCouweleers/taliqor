@@ -116,6 +116,10 @@ export type ReconciliationRun = {
   createdAt: string;
   updatedAt: string;
   matches: Match[];
+  resultStorage: "inline" | "rows";
+  resultCount: number;
+  resolvedCount: number;
+  openCount: number;
   periodEnd?: string;
   closePeriodId?: string;
   profileId?: string;

@@ -137,6 +137,10 @@ export async function parseSpreadsheetFile(
   const extension = extensionOf(file.name);
   if (extension === "csv") {
     const preview = parseCsvPreview(await file.text());
+    if (preview.rows.length > MAX_SPREADSHEET_ROWS)
+      throw new Error(`CSV files are limited to ${MAX_SPREADSHEET_ROWS.toLocaleString()} rows.`);
+    if (preview.headers.length > MAX_SPREADSHEET_COLUMNS)
+      throw new Error(`CSV files are limited to ${MAX_SPREADSHEET_COLUMNS} columns.`);
     return { ...preview, sheetNames: [], fileType: "csv" };
   }
   return parseSpreadsheetBuffer(await file.arrayBuffer(), file.name, requestedSheet);

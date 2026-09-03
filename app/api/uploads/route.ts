@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeRateLimit, isUuid, requestBodyTooLarge } from "@/lib/security";
 import { parseSpreadsheetBuffer } from "@/lib/spreadsheet";
+import { parseCsvPreview } from "@/lib/csv";
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_FILE_BYTES * 2 + 1024 * 1024;
@@ -24,17 +25,15 @@ function validateCsv(file: File, text: string) {
   )
     return "This file's contents do not match a CSV file.";
 
-  const lines = text.split(/\r?\n/);
-  if (lines.length < 2) return "Each CSV needs a header and at least one data row.";
-  if (lines.length > MAX_ROWS + 1)
-    return `CSV files are limited to ${MAX_ROWS.toLocaleString()} rows.`;
-  const delimiterCounts = [",", ";", "\t", "|"].map((delimiter) => ({
-    delimiter,
-    count: (lines[0].match(new RegExp(delimiter === "|" ? "\\|" : delimiter, "g")) || []).length,
-  }));
-  const columns = Math.max(...delimiterCounts.map(({ count }) => count + 1));
-  if (columns < 2) return "We couldn't detect multiple columns in this CSV.";
-  if (columns > MAX_COLUMNS) return `CSV files are limited to ${MAX_COLUMNS} columns.`;
+  try {
+    const parsed = parseCsvPreview(text);
+    if (parsed.rows.length > MAX_ROWS)
+      return `CSV files are limited to ${MAX_ROWS.toLocaleString()} rows.`;
+    if (parsed.headers.length > MAX_COLUMNS)
+      return `CSV files are limited to ${MAX_COLUMNS} columns.`;
+  } catch (error) {
+    return error instanceof Error ? error.message : "We couldn't read this CSV.";
+  }
   return null;
 }
 

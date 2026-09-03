@@ -11,6 +11,10 @@ const fromDatabase = (item: Record<string, any>) => ({
   leftName: item.left_name,
   rightName: item.right_name,
   matches: item.matches || [],
+  resultStorage: item.result_storage || "inline",
+  resultCount: Number(item.result_count || (item.matches || []).length),
+  resolvedCount: Number(item.resolved_count || 0),
+  openCount: Number(item.open_count || 0),
   periodEnd: item.period_end,
   closePeriodId: item.close_period_id,
   profileId: item.profile_id,
@@ -51,6 +55,7 @@ export async function GET() {
       supabase
         .from("reconciliations")
         .select("*")
+        .eq("import_status", "ready")
         .order("created_at", { ascending: false }),
       supabase.from("mapping_templates").select("*"),
       supabase.from("matching_rules").select("*").order("created_at"),
@@ -101,6 +106,7 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   const body = await request.json();
+  const resultStorage = body.resultStorage === "rows" ? "rows" : "inline";
   const name = String(body.name || "").trim();
   const leftName = String(body.leftName || "").trim();
   const rightName = String(body.rightName || "").trim();
@@ -129,6 +135,11 @@ export async function POST(request: Request) {
       left_name: leftName,
       right_name: rightName,
       matches: body.matches,
+      result_storage: resultStorage,
+      result_count: Number(body.resultCount || body.matches.length),
+      resolved_count: Number(body.resolvedCount || 0),
+      open_count: Number(body.openCount || 0),
+      import_status: resultStorage === "rows" ? "pending" : "ready",
       period_end: body.periodEnd || null,
       close_period_id: body.closePeriodId || null,
       profile_id: body.profileId || null,
@@ -156,6 +167,6 @@ export async function POST(request: Request) {
       },
       { onConflict: "organization_id,fingerprint" },
     );
-  await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "reconciliation", entityId: data.id, action: "created", summary: prior ? "Recurring reconciliation created with prior-period continuity" : "Reconciliation created", details: { periodEnd: data.period_end, profileId: data.profile_id, priorReconciliationId: data.prior_reconciliation_id } });
+  if (resultStorage === "inline") await appendAuditEvent(supabase, { organizationId: membership.organization_id, actorId: user.id, actorName: userDisplayName(user), entityType: "reconciliation", entityId: data.id, action: "created", summary: prior ? "Recurring reconciliation created with prior-period continuity" : "Reconciliation created", details: { periodEnd: data.period_end, profileId: data.profile_id, priorReconciliationId: data.prior_reconciliation_id } });
   return NextResponse.json({ run: fromDatabase(data) });
 }

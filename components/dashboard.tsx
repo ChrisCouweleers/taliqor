@@ -63,7 +63,7 @@ import {
   SpreadsheetPreview,
   spreadsheetSourceName,
 } from "@/lib/spreadsheet";
-import { reconcile } from "@/lib/reconcile";
+import { reconcileInWorker } from "@/lib/reconcile-client";
 import { createClient } from "@/lib/supabase/client";
 
 type UserInfo = {
@@ -147,6 +147,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
     [adjustmentDraftMatchId, setAdjustmentDraftMatchId] = useState(""),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState<"all" | Match["status"]>("all");
+  const loadingResults = useRef(new Set<string>());
   const leftRef = useRef<HTMLInputElement>(null),
     rightRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -245,6 +246,49 @@ export function Dashboard({ user }: { user: UserInfo }) {
       setLoading(false);
     }
   }
+  useEffect(() => {
+    const run = runs.find((item) => item.id === selectedId);
+    if (!run || run.resultStorage !== "rows" || run.matches.length || loadingResults.current.has(run.id)) return;
+    loadingResults.current.add(run.id);
+    (async () => {
+      try {
+        const results: Match[] = [];
+        for (let page = 0; ; page++) {
+          const response = await fetch(`/api/reconciliations/${run.id}/results?page=${page}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Results could not be loaded.");
+          results.push(...(data.results || []));
+          if (!data.hasMore) break;
+        }
+        setRuns((current) => current.map((item) => item.id === run.id ? { ...item, matches: results } : item));
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Results could not be loaded.");
+      } finally {
+        loadingResults.current.delete(run.id);
+      }
+    })();
+  }, [selectedId, runs]);
+
+  async function saveResultBatches(runId: string, matches: Match[]) {
+    const batchSize = 1_000;
+    for (let offset = 0; offset < matches.length; offset += batchSize * 4) {
+      const requests = [];
+      for (let batchOffset = offset; batchOffset < Math.min(matches.length, offset + batchSize * 4); batchOffset += batchSize) {
+        requests.push(fetch(`/api/reconciliations/${runId}/results`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offset: batchOffset, results: matches.slice(batchOffset, batchOffset + batchSize) }),
+        }));
+      }
+      const responses = await Promise.all(requests);
+      const failed = responses.find((response) => !response.ok);
+      if (failed) {
+        const data = await failed.json();
+        throw new Error(data.error || "A result batch could not be saved.");
+      }
+      setNotice(`Saving large reconciliation… ${Math.min(offset + batchSize * 4, matches.length).toLocaleString()} of ${matches.length.toLocaleString()} results`);
+    }
+  }
   async function refreshAudit() {
     const response = await fetch("/api/audit-events");
     const data = await response.json();
@@ -316,6 +360,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
   async function chooseFile(file: File | undefined, side: "left" | "right") {
     if (!file) return;
     try {
+      if (file.size > 100 * 1024 * 1024) throw new Error("Spreadsheet files must be smaller than 100 MB.");
       if (file.size > 15 * 1024 * 1024)
         throw new Error("Files must be smaller than 15 MB.");
       const preview = await parseSpreadsheetFile(file),
@@ -409,7 +454,7 @@ export function Dashboard({ user }: { user: UserInfo }) {
           decision: "pending" as const,
           status: "unmatched" as const,
         }));
-      const matches = [...reconcile(leftRows, rightRows, rules), ...carried];
+      const matches = [...await reconcileInWorker(leftRows, rightRows, rules), ...carried];
       const templatePayload = [
         {
           name: left.file.name,
@@ -422,6 +467,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
           mapping: right.mapping,
         },
       ];
+      const useRowStorage = matches.length > 5_000;
+      const resolvedCount = matches.filter((item) => item.status === "matched" || item.decision === "approved").length;
       const response = await fetch("/api/reconciliations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -429,7 +476,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
           name: runName || "New reconciliation",
           leftName: leftSourceName,
           rightName: rightSourceName,
-          matches,
+          matches: useRowStorage ? [] : matches,
+          resultStorage: useRowStorage ? "rows" : "inline",
+          resultCount: matches.length,
+          resolvedCount,
+          openCount: matches.length - resolvedCount,
           templates: templatePayload,
           periodEnd: runOptions.periodEnd,
           closePeriodId: runOptions.closePeriodId || undefined,
@@ -450,19 +501,27 @@ export function Dashboard({ user }: { user: UserInfo }) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      const form = new FormData();
-      form.set("runId", data.run.id);
-      form.append("files", left.file);
-      form.append("files", right.file);
-      const upload = await fetch("/api/uploads", {
-        method: "POST",
-        body: form,
-      });
-      if (!upload.ok)
+      if (useRowStorage) {
+        await saveResultBatches(data.run.id, matches);
+        const finalize = await fetch(`/api/reconciliations/${data.run.id}/results`, { method: "PUT" });
+        if (!finalize.ok) {
+          const finalData = await finalize.json();
+          throw new Error(finalData.error || "The imported results could not be finalized.");
+        }
+        setNotice("");
+      }
+      const storage = createClient().storage.from("reconciliation-files");
+      const archived = await Promise.all([left.file, right.file].map((file) => {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
+        const extension = safeName.toLowerCase().split(".").pop();
+        const contentType = extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : extension === "xls" ? "application/vnd.ms-excel" : "text/csv";
+        return storage.upload(`${user.organizationId}/${data.run.id}/${crypto.randomUUID()}-${safeName}`, file, { contentType, upsert: false });
+      }));
+      if (archived.some(({ error: uploadError }) => uploadError))
         setNotice(
           "The reconciliation was saved, but the original files could not be archived.",
         );
-      setRuns((current) => [data.run, ...current]);
+      setRuns((current) => [{ ...data.run, matches }, ...current]);
       setSelectedId(data.run.id);
       setWizardStep(3);
       navigateDashboard("reconciliation", { reconciliationId: data.run.id });
@@ -497,6 +556,8 @@ export function Dashboard({ user }: { user: UserInfo }) {
     decision: "pending" | "approved" | "rejected",
   ) {
     if (!selected) return;
+    const before = selected.matches.find((item) => item.id === matchId);
+    const wasResolved = before?.status === "matched" || before?.decision === "approved";
     const workflowStatus =
       decision !== "approved" &&
       (selected.status === "review" || selected.status === "certified")
@@ -521,14 +582,17 @@ export function Dashboard({ user }: { user: UserInfo }) {
     setRuns((current) =>
       current.map((run) =>
         run.id === selected.id
-          ? { ...run, matches, status: workflowStatus }
+          ? { ...run, matches, status: workflowStatus,
+              resolvedCount: run.resultStorage === "rows" && wasResolved !== (decision === "approved") ? run.resolvedCount + (decision === "approved" ? 1 : -1) : run.resolvedCount,
+              openCount: run.resultStorage === "rows" && wasResolved !== (decision === "approved") ? run.openCount + (decision === "approved" ? -1 : 1) : run.openCount }
           : run,
       ),
     );
-    const response = await fetch(`/api/reconciliations/${selected.id}`, {
+    const changed = matches.find((item) => item.id === matchId);
+    const response = await fetch(selected.resultStorage === "rows" ? `/api/reconciliations/${selected.id}/results` : `/api/reconciliations/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matches }),
+      body: JSON.stringify(selected.resultStorage === "rows" ? { resultId: matchId, patch: changed } : { matches }),
     });
     if (!response.ok) {
       setError("That decision could not be saved.");
@@ -590,7 +654,11 @@ export function Dashboard({ user }: { user: UserInfo }) {
     const matches = selected.matches.map((item) =>
       item.id === matchId ? { ...item, ...patch } : item,
     );
-    await updateRun({ matches });
+    setRuns((current) => current.map((run) => run.id === selected.id ? { ...run, matches } : run));
+    if (selected.resultStorage === "rows") {
+      const response = await fetch(`/api/reconciliations/${selected.id}/results`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resultId: matchId, patch }) });
+      if (!response.ok) { setError("That exception update could not be saved."); await loadRuns(); }
+    } else await updateRun({ matches });
   }
   async function saveAdjustment(
     payload: Partial<JournalAdjustment>,
@@ -1296,11 +1364,9 @@ function WorkspaceOverview({
   start: () => void;
 }) {
   if (!runs.length && !periods.length) return <Empty onStart={start} />;
-  const allResults = runs.flatMap((run) => run.matches);
-  const resolved = allResults.filter(
-    (item) => item.status === "matched" || item.decision === "approved",
-  ).length;
-  const open = allResults.length - resolved;
+  const totalResults = runs.reduce((sum, run) => sum + (run.resultCount || run.matches.length), 0);
+  const resolved = runs.reduce((sum, run) => sum + (run.resultStorage === "rows" ? run.resolvedCount : run.matches.filter((item) => item.status === "matched" || item.decision === "approved").length), 0);
+  const open = totalResults - resolved;
   const certified = runs.filter((run) => run.status === "certified").length;
   const readyForReview = runs.filter((run) => run.status === "review").length;
   const activeClose =
@@ -1315,8 +1381,8 @@ function WorkspaceOverview({
   const certifiedCloseRuns = closeRuns.filter(
     (run) => run.status === "certified",
   ).length;
-  const reconciliationRate = allResults.length
-    ? Math.round((resolved / allResults.length) * 1000) / 10
+  const reconciliationRate = totalResults
+    ? Math.round((resolved / totalResults) * 1000) / 10
     : 0;
   return (
     <>
@@ -1340,7 +1406,7 @@ function WorkspaceOverview({
           label="Overall reconciliation rate"
           help="Resolved results divided by all reconciliation results in the workspace."
           value={`${reconciliationRate}%`}
-          trend={`${resolved} of ${allResults.length} results resolved`}
+          trend={`${resolved} of ${totalResults} results resolved`}
         />
         <Metric
           label="Open exceptions"
@@ -1372,12 +1438,13 @@ function WorkspaceOverview({
             </div>
           </div>
           {runs.slice(0, 5).map((run) => {
-            const runResolved = run.matches.filter(
+            const runResolved = run.resultStorage === "rows" ? run.resolvedCount : run.matches.filter(
               (item) =>
                 item.status === "matched" || item.decision === "approved",
             ).length;
-            const runRate = run.matches.length
-              ? Math.round((runResolved / run.matches.length) * 100)
+            const runTotal = run.resultCount || run.matches.length;
+            const runRate = runTotal
+              ? Math.round((runResolved / runTotal) * 100)
               : 0;
             return (
               <button key={run.id} onClick={() => openReconciliation(run.id)}>
@@ -1388,7 +1455,7 @@ function WorkspaceOverview({
                   <strong>{run.name}</strong>
                   <small>
                     {run.leftName} vs {run.rightName} ·{" "}
-                    {run.matches.length - runResolved} open
+                    {runTotal - runResolved} open
                     {run.closePeriodId &&
                       ` · Used in ${periods.find((period) => period.id === run.closePeriodId)?.name || "close"}`}
                   </small>
@@ -1469,6 +1536,11 @@ function Results({
   uploadEvidence: (file: File | undefined, matchId: string) => void;
   deleteEvidence: (id: string) => void;
 }) {
+  const pageSize = 100;
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, pages - 1);
+  const visibleRows = rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
   return (
     <div className="table-scroll">
       <table>
@@ -1483,7 +1555,7 @@ function Results({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => (
+          {visibleRows.map((item) => (
             <tr key={item.id}>
               <td>
                 <strong>{item.left.id}</strong>
@@ -1663,6 +1735,16 @@ function Results({
       {!rows.length && (
         <div className="empty">No transactions match this view.</div>
       )}
+      {rows.length > pageSize && (
+        <div className="result-pagination">
+          <span>Showing {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, rows.length)} of {rows.length.toLocaleString()}</span>
+          <div>
+            <button disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Previous</button>
+            <span>Page {safePage + 1} of {pages}</span>
+            <button disabled={safePage + 1 >= pages} onClick={() => setPage((current) => Math.min(pages - 1, current + 1))}>Next</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1685,7 +1767,7 @@ function History({
           <Empty onStart={() => {}} />
         ) : (
           runs.map((run) => {
-            const resolved = run.matches.filter(
+            const resolved = run.resultStorage === "rows" ? run.resolvedCount : run.matches.filter(
               (m) => m.status === "matched" || m.decision === "approved",
             ).length;
             return (
@@ -1715,8 +1797,8 @@ function History({
                     {reconciliationStatusLabel(run.status)}
                   </span>
                   <strong>
-                    {run.matches.length
-                      ? Math.round((resolved / run.matches.length) * 100)
+                    {(run.resultCount || run.matches.length)
+                      ? Math.round((resolved / (run.resultCount || run.matches.length)) * 100)
                       : 0}
                     %
                   </strong>

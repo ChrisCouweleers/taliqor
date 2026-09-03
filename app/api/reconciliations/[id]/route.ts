@@ -60,6 +60,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (body.matches !== undefined) {
     if (!Array.isArray(body.matches) || body.matches.length > 100_000) return NextResponse.json({ error: "The reconciliation contains too many rows." }, { status: 400 });
     update.matches = body.matches;
+    const resolved = body.matches.filter((item: Record<string, unknown>) => item.status === "matched" || item.decision === "approved").length;
+    update.result_count = body.matches.length;
+    update.resolved_count = resolved;
+    update.open_count = body.matches.length - resolved;
   }
   if (body.name !== undefined) {
     const name = String(body.name).trim();
@@ -86,8 +90,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     action = "submitted_for_review"; summary = "Reconciliation submitted for review";
   } else if (requestedStatus === "certified") {
     if (current.status !== "review") return NextResponse.json({ error: "Submit the reconciliation for review before certifying it." }, { status: 409 });
-    const openMaterial = (current.matches || []).filter((item: Record<string, any>) => item.status !== "matched" && item.decision !== "approved" && Math.abs(Number(item.left?.amount || 0)) > Number(current.materiality || 0) && (!item.exceptionType || !String(item.explanation || "").trim()));
-    if (openMaterial.length) return NextResponse.json({ error: `Classify and explain ${openMaterial.length} material exception${openMaterial.length === 1 ? "" : "s"} before certification.` }, { status: 409 });
+    const certificationResults = current.matches || [];
+    let rowOpenMaterialCount = 0;
+    if (current.result_storage === "rows") {
+      const materiality = Number(current.materiality || 0);
+      const { count: positive, error: positiveError } = await supabase.from("reconciliation_results").select("id", { count: "exact", head: true }).eq("reconciliation_id", id).neq("match_status", "matched").neq("decision", "approved").gt("source_amount", materiality).or("exception_type.eq.,explanation.eq.");
+      const { count: negative, error: negativeError } = await supabase.from("reconciliation_results").select("id", { count: "exact", head: true }).eq("reconciliation_id", id).neq("match_status", "matched").neq("decision", "approved").lt("source_amount", -materiality).or("exception_type.eq.,explanation.eq.");
+      if (positiveError || negativeError) return NextResponse.json({ error: "Reconciliation results could not be verified." }, { status: 500 });
+      rowOpenMaterialCount = (positive || 0) + (negative || 0);
+    }
+    const openMaterial = certificationResults.filter((item: Record<string, any>) => item.status !== "matched" && item.decision !== "approved" && Math.abs(Number(item.left?.amount || 0)) > Number(current.materiality || 0) && (!item.exceptionType || !String(item.explanation || "").trim()));
+    const openMaterialCount = current.result_storage === "rows" ? rowOpenMaterialCount : openMaterial.length;
+    if (openMaterialCount) return NextResponse.json({ error: `Classify and explain ${openMaterialCount} material exception${openMaterialCount === 1 ? "" : "s"} before certification.` }, { status: 409 });
     if (current.beginning_balance != null && current.period_activity != null && current.source_balance != null && Math.abs(Number(current.beginning_balance) + Number(current.period_activity) - Number(current.source_balance)) > 0.01) return NextResponse.json({ error: "The beginning balance plus period activity must equal the source ending balance before certification." }, { status: 409 });
     if (current.profile_id) {
       const [{ data: profile }, { count: evidenceCount }] = await Promise.all([

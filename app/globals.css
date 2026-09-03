@@ -6767,3 +6767,6 @@ button:disabled {
   .prior-explanation { grid-column: 1 / -1; }
   .continuity-banner { align-items: flex-start; flex-wrap: wrap; }
 }
+.result-pagination { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px; border-top:1px solid var(--line); }
+.result-pagination > div { display:flex; align-items:center; gap:10px; }
+.result-pagination button { padding:8px 12px; }

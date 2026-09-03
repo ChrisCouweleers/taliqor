@@ -1,4 +1,4 @@
-import { CanonicalField, ColumnMapping, Transaction } from "./domain";
+import type { CanonicalField, ColumnMapping, Transaction } from "./domain.ts";
 
 export type CsvPreview = { headers: string[]; rows: Record<string, string>[]; delimiter: string };
 
@@ -33,12 +33,38 @@ function splitRow(line: string, delimiter: string) {
   return cells;
 }
 
+/** Parse RFC 4180-style records, including quoted delimiters and newlines. */
+function splitRecords(text: string) {
+  const records: string[] = [];
+  let record = "", quoted = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === '"') {
+      record += char;
+      if (quoted && text[index + 1] === '"') {
+        record += text[++index];
+      } else {
+        quoted = !quoted;
+      }
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index++;
+      if (record.trim()) records.push(record);
+      record = "";
+    } else {
+      record += char;
+    }
+  }
+  if (quoted) throw new Error("The CSV contains an unclosed quoted field.");
+  if (record.trim()) records.push(record);
+  return records;
+}
+
 function detectDelimiter(line: string) {
   return [",", ";", "\t", "|"].map((delimiter) => ({ delimiter, count: splitRow(line, delimiter).length })).sort((a, b) => b.count - a.count)[0].delimiter;
 }
 
 export function parseCsvPreview(text: string): CsvPreview {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  const lines = splitRecords(text.replace(/^\uFEFF/, ""));
   if (lines.length < 2) throw new Error("The file needs a header and at least one data row.");
   let headerIndex = 0;
   let delimiter = detectDelimiter(lines[0]);
@@ -97,7 +123,10 @@ export function normalizeRows(preview: CsvPreview, mapping: ColumnMapping, sourc
     const rawDate = mapping.date ? raw[mapping.date] : "";
     const parsedDate = rawDate && Number.isFinite(Date.parse(rawDate)) ? new Date(rawDate).toISOString().slice(0, 10) : rawDate;
     const optional = (field: CanonicalField) => mapping[field] ? raw[mapping[field]] || undefined : undefined;
-    return { id: mapping.id ? raw[mapping.id] || `${source}-${index + 1}` : `${source}-${index + 1}`, date: parsedDate, description: mapping.description ? raw[mapping.description] || "Transaction" : "Transaction", amount, currency: mapping.currency ? raw[mapping.currency] || "USD" : "USD", account: optional("account"), debit, credit, entity: optional("entity"), department: optional("department"), location: optional("location"), class: optional("class"), subsidiary: optional("subsidiary"), postingPeriod: optional("postingPeriod"), source, raw };
+    // The immutable original file is archived separately. Keeping every wide
+    // source column on every match multiplies large ERP exports several times
+    // in memory, over the network, and in Postgres.
+    return { id: mapping.id ? raw[mapping.id] || `${source}-${index + 1}` : `${source}-${index + 1}`, date: parsedDate, description: mapping.description ? raw[mapping.description] || "Transaction" : "Transaction", amount, currency: mapping.currency ? raw[mapping.currency] || "USD" : "USD", account: optional("account"), debit, credit, entity: optional("entity"), department: optional("department"), location: optional("location"), class: optional("class"), subsidiary: optional("subsidiary"), postingPeriod: optional("postingPeriod"), source, raw: {} };
   });
 }
 
