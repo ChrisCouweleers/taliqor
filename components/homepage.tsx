@@ -50,7 +50,7 @@ export function Homepage() {
         </a>
       </div>
 
-      <nav className="marketing-nav">
+      <nav className="marketing-nav" aria-label="Main navigation">
         <Link className="marketing-logo" href="/">
           <Logo />
         </Link>
@@ -443,7 +443,7 @@ export function Homepage() {
         </section>
       </main>
 
-      <footer className="site-footer">
+      <footer className="site-footer" aria-label="Site footer">
         <div className="footer-brand">
           <Link href="/" aria-label="Taliqor home"><Logo /></Link>
           <p>Revenue reconciliation and financial close clarity for modern finance teams.</p>
