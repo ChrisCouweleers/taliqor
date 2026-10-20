@@ -1,5 +1,14 @@
 import type { Match, ReconciliationRules, Transaction } from "./domain.ts";
 
+const SCORE_CURRENCY_MISMATCH = -100;
+const SCORE_REFERENCE_EXACT = 55;
+const SCORE_AMOUNT_EXACT = 30;
+const SCORE_AMOUNT_TOLERATED = 14;
+const SCORE_DATE_EXACT = 10;
+const SCORE_DATE_TOLERATED = 6;
+const SCORE_DESCRIPTION_SIMILAR = 8;
+const DESCRIPTION_SIMILARITY_THRESHOLD = 0.72;
+
 function daysBetween(a: string, b: string) {
   const first = Date.parse(a), second = Date.parse(b);
   return Number.isFinite(first) && Number.isFinite(second) ? Math.abs(first - second) / 86400000 : 99;
@@ -81,13 +90,13 @@ export function reconcile(left: Transaction[], right: Transaction[], rules: Part
       const tolerance = Math.max(Math.abs(transaction.amount) * (amountTolerance / 100), .01);
       const dayDelta = daysBetween(transaction.date, candidate.date);
       const textSimilarity = similarity(transaction.description, candidate.description);
-      if (transaction.currency !== candidate.currency) { score -= 100; evidence.push("Currency differs"); }
-      if (exactId) { score += 55; evidence.push("Reference exact"); }
-      if (amountDelta < .005) { score += 30; evidence.push("Amount exact"); }
-      else if (amountDelta <= tolerance) { score += 14; evidence.push(`Amount within ${((amountDelta / Math.max(Math.abs(transaction.amount), 1)) * 100).toFixed(1)}%`); }
-      if (dayDelta === 0) { score += 10; evidence.push("Date exact"); }
-      else if (dayDelta <= dateTolerance) { score += 6; evidence.push(`Dates ${dayDelta} day${dayDelta === 1 ? "" : "s"} apart`); }
-      if (textSimilarity > .72) { score += 8; evidence.push("Description similar"); }
+      if (transaction.currency !== candidate.currency) { score += SCORE_CURRENCY_MISMATCH; evidence.push("Currency differs"); }
+      if (exactId) { score += SCORE_REFERENCE_EXACT; evidence.push("Reference exact"); }
+      if (amountDelta < .005) { score += SCORE_AMOUNT_EXACT; evidence.push("Amount exact"); }
+      else if (amountDelta <= tolerance) { score += SCORE_AMOUNT_TOLERATED; evidence.push(`Amount within ${((amountDelta / Math.max(Math.abs(transaction.amount), 1)) * 100).toFixed(1)}%`); }
+      if (dayDelta === 0) { score += SCORE_DATE_EXACT; evidence.push("Date exact"); }
+      else if (dayDelta <= dateTolerance) { score += SCORE_DATE_TOLERATED; evidence.push(`Dates ${dayDelta} day${dayDelta === 1 ? "" : "s"} apart`); }
+      if (textSimilarity > DESCRIPTION_SIMILARITY_THRESHOLD) { score += SCORE_DESCRIPTION_SIMILAR; evidence.push("Description similar"); }
       if (score > bestScore) { bestScore = score; bestIndex = index; bestEvidence = evidence; }
     });
     if (bestIndex >= 0 && bestScore >= 30) {
