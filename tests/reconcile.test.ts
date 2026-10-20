@@ -18,6 +18,14 @@ test("matches exact amounts and references while retaining explainable evidence"
   assert.equal(results[1].right?.amount, 99);
 });
 
+test("matches transactions within date tolerance when amounts are exact", () => {
+  const left = [transaction("JE-150", 750, "2026-09-01")];
+  const right = [transaction("BANK-150", 750, "2026-09-03")];
+  const results = reconcile(left, right, { dateTolerance: 3 });
+  assert.equal(results[0].status, "matched");
+  assert.match(results[0].reason, /Dates \d day/);
+});
+
 test("does not match transactions with different currencies", () => {
   const usd = { id: "JE-200", amount: 500, date: "2026-08-31", description: "Payment", currency: "USD", source: "Bank.csv", raw: {} };
   const eur = { id: "JE-200", amount: 500, date: "2026-08-31", description: "Payment", currency: "EUR", source: "Ledger.csv", raw: {} };
