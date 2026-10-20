@@ -9,7 +9,6 @@ import {
   Lightning,
   LockKey,
   ShieldCheck,
-  Sparkle,
   Stack,
   TrendUp,
   Warning,
@@ -41,15 +40,6 @@ const transactions = [
 export function Homepage() {
   return (
     <div className="marketing">
-      <div className="announcement">
-        <span>
-          <Sparkle weight="fill" /> Taliqor is now in open beta
-        </span>
-        <a href="#contact">
-          Join the waitlist <ArrowRight />
-        </a>
-      </div>
-
       <nav className="marketing-nav" aria-label="Main navigation">
         <Link className="marketing-logo" href="/">
           <Logo />
