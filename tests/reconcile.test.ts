@@ -18,6 +18,22 @@ test("matches exact amounts and references while retaining explainable evidence"
   assert.equal(results[1].right?.amount, 99);
 });
 
+test("does not match transactions with different currencies", () => {
+  const usd = { id: "JE-200", amount: 500, date: "2026-08-31", description: "Payment", currency: "USD", source: "Bank.csv", raw: {} };
+  const eur = { id: "JE-200", amount: 500, date: "2026-08-31", description: "Payment", currency: "EUR", source: "Ledger.csv", raw: {} };
+  const results = reconcile([usd], [eur]);
+  assert.equal(results.find((m) => m.left.id === "JE-200")?.status, "unmatched");
+});
+
+test("returns unmatched right-side rows when no left transaction claims them", () => {
+  const left = [transaction("JE-300", 100)];
+  const right = [transaction("JE-300", 100), transaction("JE-301", 200)];
+  const results = reconcile(left, right);
+  const unmatched = results.filter((m) => m.status === "unmatched");
+  assert.equal(unmatched.length, 1);
+  assert.equal(unmatched[0].left.id, "JE-301");
+});
+
 test("matches 100,000 rows without quadratic candidate scanning", { timeout: 10_000 }, () => {
   const rows = 100_000;
   const left = Array.from({ length: rows }, (_, index) => transaction(`L-${index}`, index + 0.25));
