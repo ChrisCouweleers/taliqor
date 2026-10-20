@@ -271,4 +271,5 @@ export type SafeUser = {
   email: string;
   organizationId: string;
   organizationName: string;
+  role: "owner" | "member";
 };

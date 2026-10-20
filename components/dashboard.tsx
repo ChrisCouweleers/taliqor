@@ -49,6 +49,7 @@ import {
   ReconciliationRun,
   VarianceItem,
   AuditEvent,
+  SafeUser,
 } from "@/lib/domain";
 import {
   csvEscape,
@@ -66,14 +67,7 @@ import {
 import { reconcileInWorker } from "@/lib/reconcile-client";
 import { createClient } from "@/lib/supabase/client";
 
-type UserInfo = {
-  id: string;
-  name: string;
-  email: string;
-  organizationId: string;
-  organizationName: string;
-  role: "owner" | "member";
-};
+type UserInfo = SafeUser;
 type UploadState = {
   file: File;
   preview: SpreadsheetPreview;
