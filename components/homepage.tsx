@@ -245,10 +245,19 @@ export function Homepage() {
               <i className="qb-mark">qb</i> quickbooks
             </span>
             <span>
+              <i className="netsuite-mark">NS</i> NetSuite
+            </span>
+            <span>
               <i className="square-mark">■</i> Square
             </span>
             <span>
               <i className="xero-mark">X</i> XERO
+            </span>
+            <span>
+              <i className="sage-mark">Sg</i> Sage
+            </span>
+            <span>
+              <i className="bill-mark">B</i> Bill.com
             </span>
             <span>
               <i className="bank-mark">
