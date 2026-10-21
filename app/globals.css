@@ -1494,7 +1494,7 @@ td small {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 62px;
+  gap: 44px;
   margin-top: 25px;
   color: #637087;
 }
@@ -1533,6 +1533,37 @@ td small {
   display: grid;
   place-items: center;
   font-size: 12px;
+}
+.netsuite-mark {
+  background: #1a5fb4;
+  color: #fff;
+  border-radius: 4px;
+  width: 28px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  letter-spacing: -0.5px;
+}
+.sage-mark {
+  background: #00b050;
+  color: #fff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+}
+.bill-mark {
+  background: #2d63c8;
+  color: #fff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
 }
 .bank-mark {
   color: #516079;
@@ -6019,16 +6050,25 @@ button:disabled {
   animation: brandBreathe 6s ease-in-out infinite;
 }
 .trust-strip .logos span:nth-child(2) {
-  animation-delay: -1.2s;
+  animation-delay: -0.75s;
 }
 .trust-strip .logos span:nth-child(3) {
-  animation-delay: -2.4s;
+  animation-delay: -1.5s;
 }
 .trust-strip .logos span:nth-child(4) {
-  animation-delay: -3.6s;
+  animation-delay: -2.25s;
 }
 .trust-strip .logos span:nth-child(5) {
-  animation-delay: -4.8s;
+  animation-delay: -3.0s;
+}
+.trust-strip .logos span:nth-child(6) {
+  animation-delay: -3.75s;
+}
+.trust-strip .logos span:nth-child(7) {
+  animation-delay: -4.5s;
+}
+.trust-strip .logos span:nth-child(8) {
+  animation-delay: -5.25s;
 }
 .workflow-card {
   transition:
